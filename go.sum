@@ -547,8 +547,8 @@ github.com/jcmturner/gofork v1.0.0/go.mod h1:MK8+TM0La+2rjBD4jE12Kj1pCCxK7d2LK/U
 github.com/jcmturner/goidentity/v6 v6.0.1/go.mod h1:X1YW3bgtvwAXju7V3LCIMpY0Gbxyjn/mY9zx4tFonSg=
 github.com/jcmturner/gokrb5/v8 v8.4.2/go.mod h1:sb+Xq/fTY5yktf/VxLsE3wlfPqQjp0aWNYyvBVK62bc=
 github.com/jcmturner/rpc/v2 v2.0.3/go.mod h1:VUJYCIDm3PVOEHw8sgt091/20OJjskO/YJki3ELg/Hc=
-github.com/jiasu9527/xray-core v1.260327.0-jiasu2 h1:nXsZeT+xMrYsL0AxY0ARIqN2T1Efof5G4RZyJ0CEcnE=
-github.com/jiasu9527/xray-core v1.260327.0-jiasu2/go.mod h1:lVtoRmKm18QPvG9SahaWjKqxBhsl3X+nOzwW85qI4JE=
+github.com/jiasu9527/xray-core v1.260327.0-jiasu3 h1:ChpOE+TUxFzDSBR6aaFNQHKmAzLpiup9Er8wzjIxT5Q=
+github.com/jiasu9527/xray-core v1.260327.0-jiasu3/go.mod h1:lVtoRmKm18QPvG9SahaWjKqxBhsl3X+nOzwW85qI4JE=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1/go.mod h1:L3OGu8Wl2/fWfCI6z80xFu9LTZmf1ZRjMHUOPmWr69U=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
