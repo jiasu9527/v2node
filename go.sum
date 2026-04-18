@@ -547,6 +547,8 @@ github.com/jcmturner/gofork v1.0.0/go.mod h1:MK8+TM0La+2rjBD4jE12Kj1pCCxK7d2LK/U
 github.com/jcmturner/goidentity/v6 v6.0.1/go.mod h1:X1YW3bgtvwAXju7V3LCIMpY0Gbxyjn/mY9zx4tFonSg=
 github.com/jcmturner/gokrb5/v8 v8.4.2/go.mod h1:sb+Xq/fTY5yktf/VxLsE3wlfPqQjp0aWNYyvBVK62bc=
 github.com/jcmturner/rpc/v2 v2.0.3/go.mod h1:VUJYCIDm3PVOEHw8sgt091/20OJjskO/YJki3ELg/Hc=
+github.com/jiasu9527/xray-core v1.260327.0-jiasu2 h1:nXsZeT+xMrYsL0AxY0ARIqN2T1Efof5G4RZyJ0CEcnE=
+github.com/jiasu9527/xray-core v1.260327.0-jiasu2/go.mod h1:lVtoRmKm18QPvG9SahaWjKqxBhsl3X+nOzwW85qI4JE=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1/go.mod h1:L3OGu8Wl2/fWfCI6z80xFu9LTZmf1ZRjMHUOPmWr69U=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
@@ -950,8 +952,6 @@ github.com/volcengine/volc-sdk-golang v1.0.216 h1:+wAq8RvxpGECveRJaAXZFpzrZoQ33W
 github.com/volcengine/volc-sdk-golang v1.0.216/go.mod h1:zHJlaqiMbIB+0mcrsZPTwOb3FB7S/0MCfqlnO8R7hlM=
 github.com/vultr/govultr/v3 v3.21.1 h1:0cnA8fXiqayPGbAlNHaW+5oCQjpDNkkAm3Nt3LOHplM=
 github.com/vultr/govultr/v3 v3.21.1/go.mod h1:9WwnWGCKnwDlNjHjtt+j+nP+0QWq6hQXzaHgddqrLWY=
-github.com/wyx2685/xray-core v0.0.0-20260414175829-a1d42cc5a4c8 h1:z+87mSfc75qff78zylnALckoNX0LOfNZeW5LN2wM7EQ=
-github.com/wyx2685/xray-core v0.0.0-20260414175829-a1d42cc5a4c8/go.mod h1:lVtoRmKm18QPvG9SahaWjKqxBhsl3X+nOzwW85qI4JE=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.0.2/go.mod h1:1WAq6h33pAW+iRreB34OORO2Nf7qel3VV3fjBj+hCSs=
 github.com/xdg-go/scram v1.1.2/go.mod h1:RT/sEzTbU5y00aCK8UOx6R7YryM0iF1N2MOmC3kKLN4=
