@@ -42,6 +42,50 @@ func hasOutboundWithTag(list []*core.OutboundHandlerConfig, tag string) bool {
 	return false
 }
 
+func sourceBoundDirectTag(inboundTag string) string {
+	return "source-direct::" + inboundTag
+}
+
+func nodeSendThrough(info *panel.NodeInfo) *string {
+	if info == nil || info.Common == nil {
+		return nil
+	}
+	value := strings.TrimSpace(info.Common.SendThrough)
+	if value == "" {
+		return nil
+	}
+	switch strings.ToLower(value) {
+	case "0.0.0.0", "::":
+		return nil
+	default:
+		return &value
+	}
+}
+
+func applyNodeSendThrough(outbound *coreConf.OutboundDetourConfig, sendThrough *string) {
+	if outbound == nil || sendThrough == nil || outbound.SendThrough != nil {
+		return
+	}
+	switch strings.ToLower(outbound.Protocol) {
+	case "freedom", "direct":
+		outbound.SendThrough = sendThrough
+	}
+}
+
+func appendDefaultOutboundRule(ruleList *[]json.RawMessage, inboundTag, outboundTag string) error {
+	rule := map[string]interface{}{
+		"inboundTag":  inboundTag,
+		"network":     "tcp,udp",
+		"outboundTag": outboundTag,
+	}
+	rawRule, err := json.Marshal(rule)
+	if err != nil {
+		return err
+	}
+	*ruleList = append(*ruleList, rawRule)
+	return nil
+}
+
 func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHandlerConfig, *router.Config, error) {
 	//dns
 	queryStrategy := "UseIPv4v6"
@@ -79,7 +123,20 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 	}
 
 	for _, info := range infos {
+		sendThrough := nodeSendThrough(info)
+		hasDefaultOut := false
 		if len(info.Common.Routes) == 0 {
+			if sendThrough != nil {
+				tag := sourceBoundDirectTag(info.Tag)
+				if err := appendDefaultOutboundRule(&coreRouterConfig.RuleList, info.Tag, tag); err != nil {
+					return nil, nil, nil, err
+				}
+				customOutbound, err := buildFreedomOutbound(tag, sendThrough)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				coreOutboundConfig = append(coreOutboundConfig, customOutbound)
+			}
 			continue
 		}
 		for _, route := range info.Common.Routes {
@@ -151,6 +208,7 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				if err != nil {
 					continue
 				}
+				applyNodeSendThrough(outbound, sendThrough)
 				rule := map[string]interface{}{
 					"inboundTag":  info.Tag,
 					"domain":      route.Match,
@@ -178,6 +236,7 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				if err != nil {
 					continue
 				}
+				applyNodeSendThrough(outbound, sendThrough)
 				rule := map[string]interface{}{
 					"inboundTag":  info.Tag,
 					"ip":          route.Match,
@@ -197,6 +256,7 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				}
 				coreOutboundConfig = append(coreOutboundConfig, custom_outbound)
 			case "default_out":
+				hasDefaultOut = true
 				if route.ActionValue == nil {
 					continue
 				}
@@ -205,16 +265,10 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				if err != nil {
 					continue
 				}
-				rule := map[string]interface{}{
-					"inboundTag":  info.Tag,
-					"network":     "tcp,udp",
-					"outboundTag": outbound.Tag,
-				}
-				rawRule, err := json.Marshal(rule)
-				if err != nil {
+				applyNodeSendThrough(outbound, sendThrough)
+				if err := appendDefaultOutboundRule(&coreRouterConfig.RuleList, info.Tag, outbound.Tag); err != nil {
 					continue
 				}
-				coreRouterConfig.RuleList = append(coreRouterConfig.RuleList, rawRule)
 				if hasOutboundWithTag(coreOutboundConfig, outbound.Tag) {
 					continue
 				}
@@ -226,6 +280,17 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 			default:
 				continue
 			}
+		}
+		if !hasDefaultOut && sendThrough != nil {
+			tag := sourceBoundDirectTag(info.Tag)
+			if err := appendDefaultOutboundRule(&coreRouterConfig.RuleList, info.Tag, tag); err != nil {
+				return nil, nil, nil, err
+			}
+			customOutbound, err := buildFreedomOutbound(tag, sendThrough)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			coreOutboundConfig = append(coreOutboundConfig, customOutbound)
 		}
 	}
 	DnsConfig, err := coreDnsConfig.Build()
