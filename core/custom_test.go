@@ -82,6 +82,81 @@ func TestGetCustomConfigAppliesSendThroughToFreedomDefaultOut(t *testing.T) {
 	}
 }
 
+func TestGetCustomConfigDefaultsSendThroughToInboundOrigin(t *testing.T) {
+	t.Parallel()
+
+	info := &panel.NodeInfo{
+		Tag: "[panel]-vless:3",
+		Common: &panel.CommonNode{
+			Protocol: "vless",
+			ListenIP: "0.0.0.0",
+		},
+	}
+
+	_, outbounds, routeConfig, err := GetCustomConfig([]*panel.NodeInfo{info})
+	if err != nil {
+		t.Fatalf("GetCustomConfig() error = %v", err)
+	}
+
+	expectedTag := "source-direct::" + info.Tag
+	outbound := findOutboundByTag(outbounds, expectedTag)
+	if outbound == nil {
+		t.Fatalf("expected source-bound outbound %q to exist", expectedTag)
+	}
+	if got := outboundVia(t, outbound); got != "origin" {
+		t.Fatalf("source-bound outbound via = %q, want %q", got, "origin")
+	}
+	if rule := findRouteByOutboundTag(routeConfig, expectedTag); rule == nil {
+		t.Fatalf("expected routing rule for outbound %q", expectedTag)
+	}
+}
+
+func TestGetCustomConfigAppliesOriginSendThroughToProxyDefaultOut(t *testing.T) {
+	t.Parallel()
+
+	actionValue := `{
+		"protocol":"shadowsocks",
+		"tag":"hk-media",
+		"settings":{
+			"servers":[
+				{
+					"address":"198.51.100.8",
+					"port":443,
+					"method":"aes-128-gcm",
+					"password":"secret"
+				}
+			]
+		}
+	}`
+	info := &panel.NodeInfo{
+		Tag: "[panel]-vless:4",
+		Common: &panel.CommonNode{
+			Protocol: "vless",
+			ListenIP: "0.0.0.0",
+			Routes: []panel.Route{
+				{
+					Action:      "default_out",
+					ActionValue: &actionValue,
+				},
+			},
+		},
+	}
+
+	_, outbounds, _, err := GetCustomConfig([]*panel.NodeInfo{info})
+	if err != nil {
+		t.Fatalf("GetCustomConfig() error = %v", err)
+	}
+
+	expectedTag := scopedOutboundTag(info.Tag, "hk-media")
+	outbound := findOutboundByTag(outbounds, expectedTag)
+	if outbound == nil {
+		t.Fatalf("expected default_out outbound %q to exist", expectedTag)
+	}
+	if got := outboundVia(t, outbound); got != "origin" {
+		t.Fatalf("default_out via = %q, want %q", got, "origin")
+	}
+}
+
 func TestGetCustomConfigScopesCustomOutboundTagsPerNode(t *testing.T) {
 	t.Parallel()
 

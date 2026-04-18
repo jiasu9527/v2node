@@ -71,25 +71,26 @@ func nodeSendThrough(info *panel.NodeInfo) *string {
 		return nil
 	}
 	value := strings.TrimSpace(info.Common.SendThrough)
-	if value == "" {
+	if value != "" {
+		switch strings.ToLower(value) {
+		case "0.0.0.0", "::":
+			return nil
+		default:
+			return &value
+		}
+	}
+	if strings.TrimSpace(info.Common.ListenIP) == "" {
 		return nil
 	}
-	switch strings.ToLower(value) {
-	case "0.0.0.0", "::":
-		return nil
-	default:
-		return &value
-	}
+	defaultValue := "origin"
+	return &defaultValue
 }
 
 func applyNodeSendThrough(outbound *coreConf.OutboundDetourConfig, sendThrough *string) {
 	if outbound == nil || sendThrough == nil || outbound.SendThrough != nil {
 		return
 	}
-	switch strings.ToLower(outbound.Protocol) {
-	case "freedom", "direct":
-		outbound.SendThrough = sendThrough
-	}
+	outbound.SendThrough = sendThrough
 }
 
 func appendDefaultOutboundRule(ruleList *[]json.RawMessage, inboundTag, outboundTag string) error {
