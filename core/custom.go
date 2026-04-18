@@ -46,6 +46,26 @@ func sourceBoundDirectTag(inboundTag string) string {
 	return "source-direct::" + inboundTag
 }
 
+func scopedOutboundTag(inboundTag, outboundTag string) string {
+	outboundTag = strings.TrimSpace(outboundTag)
+	if outboundTag == "" {
+		return ""
+	}
+	prefix := "custom-out::" + inboundTag + "::"
+	if strings.HasPrefix(outboundTag, prefix) {
+		return outboundTag
+	}
+	return prefix + outboundTag
+}
+
+func scopeOutboundForInbound(inboundTag string, outbound *coreConf.OutboundDetourConfig) string {
+	if outbound == nil {
+		return ""
+	}
+	outbound.Tag = scopedOutboundTag(inboundTag, outbound.Tag)
+	return outbound.Tag
+}
+
 func nodeSendThrough(info *panel.NodeInfo) *string {
 	if info == nil || info.Common == nil {
 		return nil
@@ -209,17 +229,18 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 					continue
 				}
 				applyNodeSendThrough(outbound, sendThrough)
+				tag := scopeOutboundForInbound(info.Tag, outbound)
 				rule := map[string]interface{}{
 					"inboundTag":  info.Tag,
 					"domain":      route.Match,
-					"outboundTag": outbound.Tag,
+					"outboundTag": tag,
 				}
 				rawRule, err := json.Marshal(rule)
 				if err != nil {
 					continue
 				}
 				coreRouterConfig.RuleList = append(coreRouterConfig.RuleList, rawRule)
-				if hasOutboundWithTag(coreOutboundConfig, outbound.Tag) {
+				if hasOutboundWithTag(coreOutboundConfig, tag) {
 					continue
 				}
 				custom_outbound, err := outbound.Build()
@@ -237,17 +258,18 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 					continue
 				}
 				applyNodeSendThrough(outbound, sendThrough)
+				tag := scopeOutboundForInbound(info.Tag, outbound)
 				rule := map[string]interface{}{
 					"inboundTag":  info.Tag,
 					"ip":          route.Match,
-					"outboundTag": outbound.Tag,
+					"outboundTag": tag,
 				}
 				rawRule, err := json.Marshal(rule)
 				if err != nil {
 					continue
 				}
 				coreRouterConfig.RuleList = append(coreRouterConfig.RuleList, rawRule)
-				if hasOutboundWithTag(coreOutboundConfig, outbound.Tag) {
+				if hasOutboundWithTag(coreOutboundConfig, tag) {
 					continue
 				}
 				custom_outbound, err := outbound.Build()
@@ -266,10 +288,11 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 					continue
 				}
 				applyNodeSendThrough(outbound, sendThrough)
-				if err := appendDefaultOutboundRule(&coreRouterConfig.RuleList, info.Tag, outbound.Tag); err != nil {
+				tag := scopeOutboundForInbound(info.Tag, outbound)
+				if err := appendDefaultOutboundRule(&coreRouterConfig.RuleList, info.Tag, tag); err != nil {
 					continue
 				}
-				if hasOutboundWithTag(coreOutboundConfig, outbound.Tag) {
+				if hasOutboundWithTag(coreOutboundConfig, tag) {
 					continue
 				}
 				custom_outbound, err := outbound.Build()
