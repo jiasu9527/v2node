@@ -10,12 +10,13 @@ import (
 )
 
 type Task struct {
-	Name     string
-	Interval time.Duration
-	Execute  func(context.Context) error
-	Access   sync.RWMutex
-	Running  bool
-	Stop     chan struct{}
+	Name      string
+	Interval  time.Duration
+	Execute   func(context.Context) error
+	Access    sync.RWMutex
+	Running   bool
+	Stop      chan struct{}
+	executing bool
 }
 
 func (t *Task) Start(first bool) error {
@@ -28,6 +29,7 @@ func (t *Task) Start(first bool) error {
 	t.Stop = make(chan struct{})
 	t.Access.Unlock()
 	go func() {
+		defer t.safeStop()
 		timer := time.NewTimer(t.Interval)
 		defer timer.Stop()
 		if first {
@@ -56,11 +58,25 @@ func (t *Task) Start(first bool) error {
 }
 
 func (t *Task) ExecuteWithTimeout() error {
+	t.Access.Lock()
+	if t.executing {
+		t.Access.Unlock()
+		log.Warningf("Task %s previous run still executing, skipping current interval", t.Name)
+		return nil
+	}
+	t.executing = true
+	t.Access.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), min(3*t.Interval, 5*time.Minute))
 	defer cancel()
 	done := make(chan error, 1)
 
 	go func() {
+		defer func() {
+			t.Access.Lock()
+			t.executing = false
+			t.Access.Unlock()
+		}()
 		done <- t.Execute(ctx)
 	}()
 
@@ -82,6 +98,7 @@ func (t *Task) safeStop() {
 		t.Running = false
 		close(t.Stop)
 	}
+	t.executing = false
 	t.Access.Unlock()
 }
 

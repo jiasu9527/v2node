@@ -24,6 +24,7 @@ type Controller struct {
 	info                    *panel.NodeInfo
 	nodeInfoMonitorPeriodic *task.Task
 	userReportPeriodic      *task.Task
+	onlineReportPeriodic    *task.Task
 	renewCertPeriodic       *task.Task
 }
 
@@ -101,6 +102,9 @@ func (c *Controller) Close() error {
 	}
 	if c.userReportPeriodic != nil {
 		c.userReportPeriodic.Close()
+	}
+	if c.onlineReportPeriodic != nil {
+		c.onlineReportPeriodic.Close()
 	}
 	if c.renewCertPeriodic != nil {
 		c.renewCertPeriodic.Close()

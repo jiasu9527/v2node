@@ -24,11 +24,18 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		Interval: node.PushInterval,
 		Execute:  c.reportUserTrafficTask,
 	}
+	c.onlineReportPeriodic = &task.Task{
+		Name:     "reportOnlineUsersTask",
+		Interval: node.PushInterval,
+		Execute:  c.reportOnlineUsersTask,
+	}
 	log.WithField("tag", c.tag).Info("Start monitor node status")
 	// delay to start nodeInfoMonitor
 	_ = c.nodeInfoMonitorPeriodic.Start(false)
-	log.WithField("tag", c.tag).Info("Start report node status")
+	log.WithField("tag", c.tag).Info("Start report user traffic")
 	_ = c.userReportPeriodic.Start(false)
+	log.WithField("tag", c.tag).Info("Start report online users")
+	_ = c.onlineReportPeriodic.Start(false)
 	if node.Security == panel.Tls {
 		switch c.info.Common.CertInfo.CertMode {
 		case "none", "", "file", "self":

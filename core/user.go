@@ -73,6 +73,14 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 }
 
 func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserTraffic, error) {
+	return vc.collectUserTrafficSlice(tag, mintraffic, true)
+}
+
+func (vc *V2Core) PeekUserTrafficSlice(tag string, mintraffic int) ([]panel.UserTraffic, error) {
+	return vc.collectUserTrafficSlice(tag, mintraffic, false)
+}
+
+func (vc *V2Core) collectUserTrafficSlice(tag string, mintraffic int, reset bool) ([]panel.UserTraffic, error) {
 	trafficSlice := make([]panel.UserTraffic, 0)
 	vc.users.mapLock.RLock()
 	defer vc.users.mapLock.RUnlock()
@@ -84,8 +92,10 @@ func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserT
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
 			if up+down > int64(mintraffic*1000) {
-				traffic.UpCounter.Store(0)
-				traffic.DownCounter.Store(0)
+				if reset {
+					traffic.UpCounter.Store(0)
+					traffic.DownCounter.Store(0)
+				}
 				if vc.users.uidMap[email] == 0 {
 					c.Delete(email)
 					return true
