@@ -107,6 +107,38 @@ func appendDefaultOutboundRule(ruleList *[]json.RawMessage, inboundTag, outbound
 	return nil
 }
 
+func normalizeLegacyWireGuardActionValue(raw string) string {
+	var outbound map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &outbound); err != nil {
+		return raw
+	}
+	protocol, _ := outbound["protocol"].(string)
+	if strings.ToLower(strings.TrimSpace(protocol)) != "wireguard" {
+		return raw
+	}
+	settings, ok := outbound["settings"].(map[string]interface{})
+	if !ok {
+		return raw
+	}
+	if _, exists := settings["noKernelTun"]; exists {
+		return raw
+	}
+	kernelMode, exists := settings["kernelMode"]
+	if !exists {
+		return raw
+	}
+	enabled, ok := kernelMode.(bool)
+	if !ok {
+		return raw
+	}
+	settings["noKernelTun"] = !enabled
+	normalized, err := json.Marshal(outbound)
+	if err != nil {
+		return raw
+	}
+	return string(normalized)
+}
+
 func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHandlerConfig, *router.Config, error) {
 	//dns
 	queryStrategy := "UseIPv4v6"
@@ -224,8 +256,9 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				if route.ActionValue == nil {
 					continue
 				}
+				actionValue := normalizeLegacyWireGuardActionValue(*route.ActionValue)
 				outbound := &coreConf.OutboundDetourConfig{}
-				err := json.Unmarshal([]byte(*route.ActionValue), outbound)
+				err := json.Unmarshal([]byte(actionValue), outbound)
 				if err != nil {
 					continue
 				}
@@ -253,8 +286,9 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				if route.ActionValue == nil {
 					continue
 				}
+				actionValue := normalizeLegacyWireGuardActionValue(*route.ActionValue)
 				outbound := &coreConf.OutboundDetourConfig{}
-				err := json.Unmarshal([]byte(*route.ActionValue), outbound)
+				err := json.Unmarshal([]byte(actionValue), outbound)
 				if err != nil {
 					continue
 				}
@@ -283,8 +317,9 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 				if route.ActionValue == nil {
 					continue
 				}
+				actionValue := normalizeLegacyWireGuardActionValue(*route.ActionValue)
 				outbound := &coreConf.OutboundDetourConfig{}
-				err := json.Unmarshal([]byte(*route.ActionValue), outbound)
+				err := json.Unmarshal([]byte(actionValue), outbound)
 				if err != nil {
 					continue
 				}

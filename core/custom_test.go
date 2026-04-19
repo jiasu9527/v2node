@@ -8,6 +8,7 @@ import (
 	"github.com/xtls/xray-core/app/proxyman"
 	xrouter "github.com/xtls/xray-core/app/router"
 	xcore "github.com/xtls/xray-core/core"
+	xwireguard "github.com/xtls/xray-core/proxy/wireguard"
 )
 
 func TestGetCustomConfigCreatesSourceBoundDefaultOutbound(t *testing.T) {
@@ -253,6 +254,58 @@ func TestGetCoreBuildsWireGuardDefaultOutbound(t *testing.T) {
 	}
 }
 
+func TestGetCustomConfigNormalizesLegacyWireGuardKernelMode(t *testing.T) {
+	t.Parallel()
+
+	actionValue := `{
+		"protocol":"wireguard",
+		"tag":"hk-wireguard",
+		"settings":{
+			"secretKey":"uJv5tZMDltsiYEn+kUwb0Ll/CXWhMkaSCWWhfPEZM3A=",
+			"address":["10.1.1.1"],
+			"peers":[
+				{
+					"publicKey":"6e65ce0be17517110c17d77288ad87e7fd5252dcc7d09b95a39d61db03df832a",
+					"endpoint":"127.0.0.1:1234"
+				}
+			],
+			"kernelMode": false
+		}
+	}`
+	info := &panel.NodeInfo{
+		Tag: "[panel]-vless:44",
+		Common: &panel.CommonNode{
+			Protocol: "vless",
+			Routes: []panel.Route{
+				{
+					Action:      "default_out",
+					ActionValue: &actionValue,
+				},
+			},
+		},
+	}
+
+	_, outbounds, _, err := GetCustomConfig([]*panel.NodeInfo{info})
+	if err != nil {
+		t.Fatalf("GetCustomConfig() error = %v", err)
+	}
+
+	expectedTag := scopedOutboundTag(info.Tag, "hk-wireguard")
+	outbound := findOutboundByTag(outbounds, expectedTag)
+	if outbound == nil {
+		t.Fatalf("expected default_out outbound %q to exist", expectedTag)
+	}
+
+	instance := outboundProxyInstance(t, outbound)
+	config, ok := instance.(*xwireguard.DeviceConfig)
+	if !ok {
+		t.Fatalf("proxy settings type = %T, want *wireguard.DeviceConfig", instance)
+	}
+	if !config.NoKernelTun {
+		t.Fatalf("wireguard NoKernelTun = %v, want true", config.NoKernelTun)
+	}
+}
+
 func findOutboundByTag(outbounds []*xcore.OutboundHandlerConfig, tag string) *xcore.OutboundHandlerConfig {
 	for _, outbound := range outbounds {
 		if outbound != nil && outbound.Tag == tag {
@@ -293,4 +346,18 @@ func outboundVia(t *testing.T, outbound *xcore.OutboundHandlerConfig) string {
 		return ""
 	}
 	return senderConfig.GetVia().AsAddress().String()
+}
+
+func outboundProxyInstance(t *testing.T, outbound *xcore.OutboundHandlerConfig) interface{} {
+	t.Helper()
+
+	if outbound == nil || outbound.ProxySettings == nil {
+		t.Fatalf("outbound proxy settings are missing")
+	}
+
+	instance, err := outbound.ProxySettings.GetInstance()
+	if err != nil {
+		t.Fatalf("ProxySettings.GetInstance() error = %v", err)
+	}
+	return instance
 }
