@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -18,6 +19,9 @@ type Task struct {
 	ReloadCh  chan struct{}
 	Stop      chan struct{}
 	executing bool
+	timedOut  bool
+
+	RestartProcess func(reason string)
 }
 
 func (t *Task) Start(first bool) error {
@@ -61,11 +65,19 @@ func (t *Task) Start(first bool) error {
 func (t *Task) ExecuteWithTimeout() error {
 	t.Access.Lock()
 	if t.executing {
+		timedOut := t.timedOut
 		t.Access.Unlock()
+		if timedOut {
+			reason := fmt.Sprintf("Task %s remained executing after timeout", t.Name)
+			log.Error(reason)
+			t.restartProcess(reason)
+			return nil
+		}
 		log.Warningf("Task %s previous run still executing, skipping current interval", t.Name)
 		return nil
 	}
 	t.executing = true
+	t.timedOut = false
 	t.Access.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), min(5*t.Interval, 5*time.Minute))
@@ -76,6 +88,7 @@ func (t *Task) ExecuteWithTimeout() error {
 		defer func() {
 			t.Access.Lock()
 			t.executing = false
+			t.timedOut = false
 			t.Access.Unlock()
 		}()
 		done <- t.Execute(ctx)
@@ -83,6 +96,9 @@ func (t *Task) ExecuteWithTimeout() error {
 
 	select {
 	case <-ctx.Done():
+		t.Access.Lock()
+		t.timedOut = true
+		t.Access.Unlock()
 		log.Errorf("Task %s execution timed out, reloading", t.Name)
 		if t.ReloadCh != nil {
 			select {
@@ -108,10 +124,19 @@ func (t *Task) safeStop() {
 		close(t.Stop)
 	}
 	t.executing = false
+	t.timedOut = false
 	t.Access.Unlock()
 }
 
 func (t *Task) Close() {
 	t.safeStop()
 	log.Warningf("Task %s stopped", t.Name)
+}
+
+func (t *Task) restartProcess(reason string) {
+	if t.RestartProcess != nil {
+		t.RestartProcess(reason)
+		return
+	}
+	log.Panic(reason)
 }

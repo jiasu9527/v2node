@@ -48,8 +48,6 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 		return fmt.Errorf("get user manager error: %s", err)
 	}
 	var user string
-	vc.users.mapLock.Lock()
-	defer vc.users.mapLock.Unlock()
 	for i := range users {
 		user = format.UserTag(tag, users[i].Uuid)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -58,7 +56,7 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 		if err != nil {
 			return err
 		}
-		delete(vc.users.uidMap, user)
+		vc.users.Delete(user)
 		if v, ok := vc.dispatcher.Counter.Load(tag); ok {
 			tc := v.(*counter.TrafficCounter)
 			tc.Delete(user)
@@ -82,8 +80,7 @@ func (vc *V2Core) PeekUserTrafficSlice(tag string, mintraffic int) ([]panel.User
 
 func (vc *V2Core) collectUserTrafficSlice(tag string, mintraffic int, reset bool) ([]panel.UserTraffic, error) {
 	trafficSlice := make([]panel.UserTraffic, 0)
-	vc.users.mapLock.RLock()
-	defer vc.users.mapLock.RUnlock()
+	uidSnapshot := vc.users.Snapshot()
 	if v, ok := vc.dispatcher.Counter.Load(tag); ok {
 		c := v.(*counter.TrafficCounter)
 		c.Counters.Range(func(key, value interface{}) bool {
@@ -96,12 +93,13 @@ func (vc *V2Core) collectUserTrafficSlice(tag string, mintraffic int, reset bool
 					traffic.UpCounter.Store(0)
 					traffic.DownCounter.Store(0)
 				}
-				if vc.users.uidMap[email] == 0 {
+				uid, ok := uidSnapshot[email]
+				if !ok {
 					c.Delete(email)
 					return true
 				}
 				trafficSlice = append(trafficSlice, panel.UserTraffic{
-					UID:      vc.users.uidMap[email],
+					UID:      uid,
 					Upload:   up,
 					Download: down,
 				})
@@ -117,11 +115,6 @@ func (vc *V2Core) collectUserTrafficSlice(tag string, mintraffic int, reset bool
 }
 
 func (v *V2Core) AddUsers(p *AddUsersParams) (added int, err error) {
-	v.users.mapLock.Lock()
-	defer v.users.mapLock.Unlock()
-	for i := range p.Users {
-		v.users.uidMap[format.UserTag(p.Tag, p.Users[i].Uuid)] = p.Users[i].Id
-	}
 	var users []*protocol.User
 	switch p.NodeInfo.Type {
 	case "vmess":
@@ -159,8 +152,10 @@ func (v *V2Core) AddUsers(p *AddUsersParams) (added int, err error) {
 		if err != nil {
 			return 0, err
 		}
+		v.users.Store(u.Email, p.Users[added].Id)
+		added++
 	}
-	return len(users), nil
+	return added, nil
 }
 
 func buildVmessUsers(tag string, userInfo []panel.UserInfo) (users []*protocol.User) {
