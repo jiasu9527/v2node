@@ -81,6 +81,10 @@ type BaseConfig struct {
 type TlsSettings struct {
 	ServerName       string   `json:"server_name"`
 	ServerNames      []string `json:"server_names"`
+	Ech              string   `json:"ech"`
+	EchServerName    string   `json:"ech_server_name"`
+	EchKey           string   `json:"ech_key"`
+	EchConfig        string   `json:"ech_config"`
 	Dest             string   `json:"dest"`
 	ServerPort       string   `json:"server_port"`
 	ShortId          string   `json:"short_id"`

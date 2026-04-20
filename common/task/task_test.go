@@ -17,6 +17,7 @@ func TestExecuteWithTimeoutSkipsWhilePreviousRunStillExecuting(t *testing.T) {
 	task := &Task{
 		Name:     "slow-task",
 		Interval: 10 * time.Millisecond,
+		ReloadCh: make(chan struct{}, 1),
 		Execute: func(context.Context) error {
 			started.Add(1)
 			<-release
@@ -64,5 +65,47 @@ func TestExecuteWithTimeoutSkipsWhilePreviousRunStillExecuting(t *testing.T) {
 	}
 	if got := started.Load(); got != 2 {
 		t.Fatalf("started after completed run = %d, want 2", got)
+	}
+}
+
+func TestExecuteWithTimeoutSignalsReloadOnTimeout(t *testing.T) {
+	t.Parallel()
+
+	reloadCh := make(chan struct{}, 1)
+	release := make(chan struct{})
+	task := &Task{
+		Name:     "reload-on-timeout",
+		Interval: 10 * time.Millisecond,
+		ReloadCh: reloadCh,
+		Execute: func(context.Context) error {
+			<-release
+			return nil
+		},
+	}
+
+	if err := task.ExecuteWithTimeout(); err != nil {
+		t.Fatalf("ExecuteWithTimeout() error = %v", err)
+	}
+
+	select {
+	case <-reloadCh:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected reload signal after timeout")
+	}
+
+	close(release)
+	deadline := time.After(time.Second)
+	for {
+		task.Access.RLock()
+		executing := task.executing
+		task.Access.RUnlock()
+		if !executing {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for timed-out execution to exit")
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }

@@ -137,6 +137,9 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 				},
 				RejectUnknownSNI: nodeInfo.Common.CertInfo.RejectUnknownSni,
 			}
+			if nodeInfo.Common.TlsSettings.Ech == "custom" && nodeInfo.Common.TlsSettings.EchKey != "" {
+				in.StreamSetting.TLSSettings.ECHServerKeys = nodeInfo.Common.TlsSettings.EchKey
+			}
 			if nodeInfo.Type == "hysteria2" || nodeInfo.Type == "tuic" {
 				alpnList := &coreConf.StringList{"h3"}
 				in.StreamSetting.TLSSettings.ALPN = alpnList

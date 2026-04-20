@@ -15,6 +15,7 @@ type Task struct {
 	Execute   func(context.Context) error
 	Access    sync.RWMutex
 	Running   bool
+	ReloadCh  chan struct{}
 	Stop      chan struct{}
 	executing bool
 }
@@ -67,7 +68,7 @@ func (t *Task) ExecuteWithTimeout() error {
 	t.executing = true
 	t.Access.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), min(3*t.Interval, 5*time.Minute))
+	ctx, cancel := context.WithTimeout(context.Background(), min(5*t.Interval, 5*time.Minute))
 	defer cancel()
 	done := make(chan error, 1)
 
@@ -82,7 +83,15 @@ func (t *Task) ExecuteWithTimeout() error {
 
 	select {
 	case <-ctx.Done():
-		log.Errorf("Task %s execution timed out, canceling current run", t.Name)
+		log.Errorf("Task %s execution timed out, reloading", t.Name)
+		if t.ReloadCh != nil {
+			select {
+			case t.ReloadCh <- struct{}{}:
+			default:
+			}
+		} else {
+			log.Panic("Reload failed")
+		}
 		return nil
 	case err := <-done:
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
