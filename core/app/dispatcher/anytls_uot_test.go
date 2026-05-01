@@ -5,7 +5,10 @@ import (
 	"encoding/binary"
 	"testing"
 
+	M "github.com/sagernet/sing/common/metadata"
+	"github.com/sagernet/sing/common/uot"
 	"github.com/xtls/xray-core/common/buf"
+	xnet "github.com/xtls/xray-core/common/net"
 )
 
 type recordingMultiBufferWriter struct {
@@ -42,7 +45,7 @@ func uotPacket(payload []byte) []byte {
 
 func TestAnyTLSUoTDecodeWriterDeframesPackets(t *testing.T) {
 	underlying := &recordingMultiBufferWriter{}
-	writer := newAnyTLSUoTDecodeWriter(underlying)
+	writer := newAnyTLSUoTDecodeWriter(underlying, &anyTLSUoTState{})
 
 	first := append(uotPacket([]byte("hello")), uotPacket([]byte("world"))[:3]...)
 	second := uotPacket([]byte("world"))[3:]
@@ -63,7 +66,7 @@ func TestAnyTLSUoTDecodeWriterDeframesPackets(t *testing.T) {
 
 func TestAnyTLSUoTEncodeWriterFramesPackets(t *testing.T) {
 	underlying := &recordingMultiBufferWriter{}
-	writer := newAnyTLSUoTEncodeWriter(underlying)
+	writer := newAnyTLSUoTEncodeWriter(underlying, &anyTLSUoTState{})
 
 	if err := writer.WriteMultiBuffer(multiBufferFromBytes([]byte("hello"), []byte("world"))); err != nil {
 		t.Fatal(err)
@@ -74,4 +77,54 @@ func TestAnyTLSUoTEncodeWriterFramesPackets(t *testing.T) {
 	if !bytes.Equal(got, want) {
 		t.Fatalf("encoded payload = %v, want %v", got, want)
 	}
+}
+
+func TestAnyTLSUoTDecodeWriterDeframesPacketMode(t *testing.T) {
+	underlying := &recordingMultiBufferWriter{}
+	writer := newAnyTLSUoTDecodeWriter(underlying, &anyTLSUoTState{})
+
+	frame := uotPacketWithDestination("1.1.1.1:53", []byte("dns-query"))
+	if err := writer.WriteMultiBuffer(multiBufferFromBytes(frame)); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(underlying.payloads) != 1 {
+		t.Fatalf("payload count = %d, want 1", len(underlying.payloads))
+	}
+	if !bytes.Equal(underlying.payloads[0], []byte("dns-query")) {
+		t.Fatalf("payload = %q, want dns-query", underlying.payloads[0])
+	}
+}
+
+func TestAnyTLSUoTEncodeWriterFramesPacketMode(t *testing.T) {
+	underlying := &recordingMultiBufferWriter{}
+	state := &anyTLSUoTState{}
+	state.setMode(anyTLSUoTModePacket)
+	writer := newAnyTLSUoTEncodeWriter(underlying, state)
+
+	mb := multiBufferFromBytes([]byte("dns-response"))
+	mb[0].UDP = &xnet.Destination{
+		Network: xnet.Network_UDP,
+		Address: xnet.ParseAddress("1.1.1.1"),
+		Port:    xnet.Port(53),
+	}
+	if err := writer.WriteMultiBuffer(mb); err != nil {
+		t.Fatal(err)
+	}
+
+	got := bytes.Join(underlying.payloads, nil)
+	want := uotPacketWithDestination("1.1.1.1:53", []byte("dns-response"))
+	if !bytes.Equal(got, want) {
+		t.Fatalf("encoded packet frame = %v, want %v", got, want)
+	}
+}
+
+func uotPacketWithDestination(destination string, payload []byte) []byte {
+	addr := buf.New()
+	if err := uot.AddrParser.WriteAddrPort(addr, M.ParseSocksaddr(destination)); err != nil {
+		panic(err)
+	}
+	defer addr.Release()
+	packet := append([]byte(nil), addr.Bytes()...)
+	return append(packet, uotPacket(payload)...)
 }
