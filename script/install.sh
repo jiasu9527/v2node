@@ -6,6 +6,41 @@ yellow='\033[0;33m'
 plain='\033[0m'
 
 cur_dir=$(pwd)
+V2NODE_REPO="${V2NODE_REPO:-jiasu9527/v2node}"
+V2NODE_BRANCH="${V2NODE_BRANCH:-main}"
+V2NODE_FALLBACK_VERSION="${V2NODE_FALLBACK_VERSION:-v0.3.9}"
+
+cache_bust_url() {
+    local url="$1"
+    local sep="?"
+    [[ "$url" == *\?* ]] && sep="&"
+    printf '%s%s_v2node_ts=%s' "$url" "$sep" "$(date +%s)"
+}
+
+download_stream() {
+    local url="$1"
+    curl -fsSL --retry 3 --retry-delay 2 \
+        -H "Cache-Control: no-cache" \
+        -H "Pragma: no-cache" \
+        "$(cache_bust_url "$url")"
+}
+
+download_file() {
+    local url="$1"
+    local output="$2"
+    curl -fsSL --retry 3 --retry-delay 2 \
+        -H "Cache-Control: no-cache" \
+        -H "Pragma: no-cache" \
+        "$(cache_bust_url "$url")" \
+        -o "$output"
+}
+
+get_latest_version() {
+    download_stream "https://api.github.com/repos/${V2NODE_REPO}/releases/latest" \
+        | grep '"tag_name":' \
+        | sed -E 's/.*"([^"]+)".*/\1/' \
+        | head -n 1
+}
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
@@ -267,31 +302,33 @@ install_v2node() {
     cd /usr/local/v2node/
 
     if  [[ -z "$version_param" ]] ; then
-        last_version=$(curl -Ls "https://api.github.com/repos/wyx2685/v2node/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        last_version=$(get_latest_version || true)
         if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}检测 v2node 版本失败，可能是超出 Github API 限制，请稍后再试，或手动指定 v2node 版本安装${plain}"
-            exit 1
+            last_version="$V2NODE_FALLBACK_VERSION"
+            echo -e "${yellow}检测最新版本失败，使用内置版本：${last_version}${plain}"
         fi
-        echo -e "${green}检测到最新版本：${last_version}，开始安装...${plain}"
-        url="https://github.com/wyx2685/v2node/releases/download/${last_version}/v2node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip
-        if [[ $? -ne 0 ]]; then
+        echo -e "${green}检测到最新版本：${last_version}，强制下载最新二进制...${plain}"
+        url="https://github.com/${V2NODE_REPO}/releases/latest/download/v2node-linux-${arch}.zip"
+        if ! (set -o pipefail; download_stream "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip); then
             echo -e "${red}下载 v2node 失败，请确保你的服务器能够下载 Github 的文件${plain}"
             exit 1
         fi
     else
-    last_version=$version_param
-        url="https://github.com/wyx2685/v2node/releases/download/${last_version}/v2node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip
-        if [[ $? -ne 0 ]]; then
+        last_version=$version_param
+        url="https://github.com/${V2NODE_REPO}/releases/download/${last_version}/v2node-linux-${arch}.zip"
+        if ! (set -o pipefail; download_stream "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip); then
             echo -e "${red}下载 v2node $1 失败，请确保此版本存在${plain}"
             exit 1
         fi
     fi
 
-    unzip v2node-linux.zip
+    if ! unzip -oq v2node-linux.zip; then
+        echo -e "${red}解压 v2node 失败，下载包可能不完整${plain}"
+        exit 1
+    fi
     rm v2node-linux.zip -f
     chmod +x v2node
+    echo -e "${green}已安装二进制：$(./v2node version 2>/dev/null)${plain}"
     mkdir /etc/v2node/ -p
     cp geoip.dat /etc/v2node/
     cp geosite.dat /etc/v2node/
@@ -375,7 +412,10 @@ EOF
     fi
 
 
-    curl -o /usr/bin/v2node -Ls https://raw.githubusercontent.com/wyx2685/v2node/main/script/v2node.sh
+    if ! download_file "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/v2node.sh" /usr/bin/v2node; then
+        echo -e "${red}下载管理脚本失败，请检查本机能否连接 Github${plain}"
+        exit 1
+    fi
     chmod +x /usr/bin/v2node
 
     cd $cur_dir

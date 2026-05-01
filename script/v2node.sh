@@ -6,6 +6,41 @@ yellow='\033[0;33m'
 plain='\033[0m'
 
 cur_dir=$(pwd)
+V2NODE_REPO="${V2NODE_REPO:-jiasu9527/v2node}"
+V2NODE_BRANCH="${V2NODE_BRANCH:-main}"
+
+cache_bust_url() {
+    local url="$1"
+    local sep="?"
+    [[ "$url" == *\?* ]] && sep="&"
+    printf '%s%s_v2node_ts=%s' "$url" "$sep" "$(date +%s)"
+}
+
+download_stream() {
+    local url="$1"
+    curl -fsSL --retry 3 --retry-delay 2 \
+        -H "Cache-Control: no-cache" \
+        -H "Pragma: no-cache" \
+        "$(cache_bust_url "$url")"
+}
+
+download_file() {
+    local url="$1"
+    local output="$2"
+    curl -fsSL --retry 3 --retry-delay 2 \
+        -H "Cache-Control: no-cache" \
+        -H "Pragma: no-cache" \
+        "$(cache_bust_url "$url")" \
+        -o "$output"
+}
+
+run_remote_install() {
+    if [[ -n "$1" ]]; then
+        bash <(download_stream "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/install.sh") "$1"
+    else
+        bash <(download_stream "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/install.sh")
+    fi
+}
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
@@ -107,7 +142,7 @@ before_show_menu() {
 }
 
 install() {
-    bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/v2node/master/script/install.sh)
+    run_remote_install
     if [[ $? == 0 ]]; then
         if [[ $# == 0 ]]; then
             start
@@ -123,7 +158,7 @@ update() {
     else
         version=$2
     fi
-    bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/v2node/master/script/install.sh) $version
+    run_remote_install "$version"
     if [[ $? == 0 ]]; then
         echo -e "${green}更新完成，已自动重启 v2node，请使用 v2node log 查看运行日志${plain}"
         exit
@@ -307,7 +342,7 @@ show_log() {
 }
 
 update_shell() {
-    wget -O /usr/bin/v2node -N --no-check-certificate https://raw.githubusercontent.com/wyx2685/v2node/master/script/v2node.sh
+    download_file "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/v2node.sh" /usr/bin/v2node
     if [[ $? != 0 ]]; then
         echo ""
         echo -e "${red}下载脚本失败，请检查本机能否连接 Github${plain}"

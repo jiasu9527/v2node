@@ -9,11 +9,12 @@ A v2board backend base on moddified xray-core.
 ### 一键安装
 
 ```
-wget -N https://raw.githubusercontent.com/wyx2685/v2node/master/script/install.sh && bash install.sh
+curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/jiasu9527/v2node/main/script/install.sh?ts=$(date +%s)" -o install.sh && bash install.sh
 ```
 
 ## 构建
 ``` bash
+version=v0.3.9
 GOEXPERIMENT=jsonv2 go build -v -o build_assets/v2node -trimpath -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=$version' -s -w -buildid="
 ```
 
