@@ -292,6 +292,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	if err != nil {
 		return nil, err
 	}
+	wrapAnyTLSUoTLinks(ctx, destination.Network, inbound, outbound)
 	if !sniffingRequest.Enabled {
 		go d.routedDispatch(ctx, outbound, destination)
 	} else {

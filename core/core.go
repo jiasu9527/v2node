@@ -41,6 +41,29 @@ type UserMap struct {
 	mapLock sync.RWMutex
 }
 
+func (u *UserMap) Snapshot() map[string]int {
+	u.mapLock.RLock()
+	defer u.mapLock.RUnlock()
+
+	snapshot := make(map[string]int, len(u.uidMap))
+	for email, uid := range u.uidMap {
+		snapshot[email] = uid
+	}
+	return snapshot
+}
+
+func (u *UserMap) Store(email string, uid int) {
+	u.mapLock.Lock()
+	u.uidMap[email] = uid
+	u.mapLock.Unlock()
+}
+
+func (u *UserMap) Delete(email string) {
+	u.mapLock.Lock()
+	delete(u.uidMap, email)
+	u.mapLock.Unlock()
+}
+
 func New(config *conf.Conf) *V2Core {
 	core := &V2Core{
 		Config: config,
