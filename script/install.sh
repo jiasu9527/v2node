@@ -42,6 +42,18 @@ get_latest_version() {
         | head -n 1
 }
 
+install_management_script() {
+    local tmp_file="/tmp/v2node-management.$$.sh"
+    if ! download_file "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/v2node.sh" "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo -e "${red}下载管理脚本失败，请检查本机能否连接 Github${plain}"
+        return 1
+    fi
+    chmod +x "$tmp_file"
+    mv -f "$tmp_file" /usr/bin/v2node
+    echo -e "${green}已覆盖本地管理脚本：/usr/bin/v2node${plain}"
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -411,12 +423,9 @@ EOF
         first_install=false
     fi
 
-
-    if ! download_file "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/v2node.sh" /usr/bin/v2node; then
-        echo -e "${red}下载管理脚本失败，请检查本机能否连接 Github${plain}"
+    if ! install_management_script; then
         exit 1
     fi
-    chmod +x /usr/bin/v2node
 
     cd $cur_dir
     rm -f install.sh
@@ -461,4 +470,7 @@ EOF
 parse_args "$@"
 echo -e "${green}开始安装${plain}"
 install_base
+if ! install_management_script; then
+    exit 1
+fi
 install_v2node "$VERSION_ARG"
