@@ -42,6 +42,20 @@ run_remote_install() {
     fi
 }
 
+install_ddns_monitor_script() {
+    local tmp_file="/tmp/v2node-ddns.$$.sh"
+    local target="/usr/local/v2node/v2node-ddns"
+    mkdir -p /usr/local/v2node
+    if ! download_file "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/v2node-ddns.sh" "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo -e "${red}下载 DDNS/墙检测脚本失败，请检查本机能否连接 Github${plain}"
+        return 1
+    fi
+    chmod +x "$tmp_file"
+    mv -f "$tmp_file" "$target"
+    echo -e "${green}已安装 DDNS/墙检测脚本：${target}${plain}"
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -200,6 +214,7 @@ uninstall() {
         fi
         return 0
     fi
+    disable_ddns_monitor 0 >/dev/null 2>&1 || true
     if [[ x"${release}" == x"alpine" ]]; then
         service v2node stop
         rc-update del v2node
@@ -213,6 +228,8 @@ uninstall() {
     fi
     rm /etc/v2node/ -rf
     rm /usr/local/v2node/ -rf
+    rm /var/lib/v2node/ddns.state -f
+    rm /var/log/v2node-ddns.log -f
 
     echo ""
     echo -e "卸载成功，如果你想删除此脚本，则退出脚本后运行 ${green}rm /usr/bin/v2node -f${plain} 进行删除"
@@ -349,6 +366,9 @@ update_shell() {
         before_show_menu
     else
         chmod +x /usr/bin/v2node
+        if [[ -f /etc/v2node/ddns.env ]]; then
+            install_ddns_monitor_script || true
+        fi
         echo -e "${green}升级脚本成功，请重新运行脚本${plain}" && exit 0
     fi
 }
@@ -507,6 +527,262 @@ generate_config_file() {
     generate_v2node_config "$api_host" "$node_id" "$api_key"
 }
 
+env_quote() {
+    local value="$1"
+    printf "'%s'" "$(printf "%s" "$value" | sed "s/'/'\\\\''/g")"
+}
+
+ensure_ddns_dependencies() {
+    local missing=()
+    for cmd in curl jq; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+    [[ ${#missing[@]} -eq 0 ]] && return 0
+
+    echo -e "${yellow}安装 DDNS 所需依赖: ${missing[*]}${plain}"
+    if [[ x"${release}" == x"centos" ]]; then
+        yum install -y epel-release >/dev/null 2>&1 || true
+        yum install -y curl jq >/dev/null 2>&1
+    elif [[ x"${release}" == x"alpine" ]]; then
+        apk add --no-cache curl jq dcron >/dev/null 2>&1
+    elif [[ x"${release}" == x"debian" || x"${release}" == x"ubuntu" ]]; then
+        apt-get update -y >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y curl jq >/dev/null 2>&1
+    elif [[ x"${release}" == x"arch" ]]; then
+        pacman -Sy --noconfirm --needed curl jq >/dev/null 2>&1
+    fi
+}
+
+normalize_minutes() {
+    local value="$1"
+    [[ "$value" =~ ^[0-9]+$ ]] || value=5
+    (( value < 1 )) && value=1
+    (( value > 59 )) && value=59
+    echo "$value"
+}
+
+write_ddns_config() {
+    local cf_token="$1"
+    local cf_zone_id="$2"
+    local cf_record_name="$3"
+    local cf_record_type="$4"
+    local cf_ttl="$5"
+    local cf_proxied="$6"
+    local interval="$7"
+    local block_enabled="$8"
+    local block_url="$9"
+    local block_keyword="${10}"
+    local block_timeout="${11}"
+    local block_threshold="${12}"
+    local change_cmd="${13}"
+    local change_wait="${14}"
+    local change_cooldown="${15}"
+
+    mkdir -p /etc/v2node
+    umask 077
+    cat > /etc/v2node/ddns.env <<EOF
+CF_API_TOKEN=$(env_quote "$cf_token")
+CF_ZONE_ID=$(env_quote "$cf_zone_id")
+CF_RECORD_NAME=$(env_quote "$cf_record_name")
+CF_RECORD_TYPE=$(env_quote "$cf_record_type")
+CF_TTL=${cf_ttl}
+CF_PROXIED=${cf_proxied}
+CHECK_INTERVAL_MINUTES=${interval}
+BLOCK_CHECK_ENABLED=${block_enabled}
+BLOCK_CHECK_URL=$(env_quote "$block_url")
+BLOCK_CHECK_BLOCKED_KEYWORD=$(env_quote "$block_keyword")
+BLOCK_CHECK_TIMEOUT=${block_timeout}
+BLOCK_CHECK_FAIL_THRESHOLD=${block_threshold}
+CHANGE_IP_CURL_CMD=$(env_quote "$change_cmd")
+CHANGE_IP_WAIT_SECONDS=${change_wait}
+CHANGE_IP_COOLDOWN_SECONDS=${change_cooldown}
+EOF
+    chmod 600 /etc/v2node/ddns.env
+}
+
+load_ddns_interval() {
+    local interval=5
+    if [[ -f /etc/v2node/ddns.env ]]; then
+        # shellcheck source=/dev/null
+        . /etc/v2node/ddns.env
+        interval="${CHECK_INTERVAL_MINUTES:-5}"
+    fi
+    normalize_minutes "$interval"
+}
+
+install_ddns_timer() {
+    local interval
+    interval="$(load_ddns_interval)"
+
+    if [[ ! -x /usr/local/v2node/v2node-ddns ]]; then
+        install_ddns_monitor_script || return 1
+    fi
+
+    if [[ x"${release}" == x"alpine" ]]; then
+        ensure_ddns_dependencies
+        (crontab -l 2>/dev/null | grep -v '/usr/local/v2node/v2node-ddns run' || true; \
+            echo "*/${interval} * * * * /usr/local/v2node/v2node-ddns run >/dev/null 2>&1") | crontab -
+        service crond start >/dev/null 2>&1 || true
+        rc-update add crond default >/dev/null 2>&1 || true
+        echo -e "${green}DDNS/墙检测 cron 已启用，每 ${interval} 分钟执行一次${plain}"
+    else
+        cat > /etc/systemd/system/v2node-ddns.service <<EOF
+[Unit]
+Description=v2node Cloudflare DDNS and GFW block checker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/v2node/v2node-ddns run
+EOF
+        cat > /etc/systemd/system/v2node-ddns.timer <<EOF
+[Unit]
+Description=Run v2node DDNS/GFW checker periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=${interval}min
+AccuracySec=30s
+Unit=v2node-ddns.service
+
+[Install]
+WantedBy=timers.target
+EOF
+        systemctl daemon-reload
+        systemctl enable --now v2node-ddns.timer
+        echo -e "${green}DDNS/墙检测 systemd timer 已启用，每 ${interval} 分钟执行一次${plain}"
+    fi
+}
+
+disable_ddns_monitor() {
+    if [[ x"${release}" == x"alpine" ]]; then
+        if command -v crontab >/dev/null 2>&1; then
+            (crontab -l 2>/dev/null | grep -v '/usr/local/v2node/v2node-ddns run' || true) | crontab -
+        fi
+    else
+        systemctl disable --now v2node-ddns.timer >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/v2node-ddns.service /etc/systemd/system/v2node-ddns.timer
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl reset-failed v2node-ddns.service v2node-ddns.timer >/dev/null 2>&1 || true
+    fi
+    echo -e "${green}DDNS/墙检测已停用${plain}"
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
+configure_ddns_monitor() {
+    ensure_ddns_dependencies
+
+    echo -e "${yellow}Cloudflare DDNS/墙检测自动换IP配置${plain}"
+    echo "说明：DDNS 使用 Cloudflare API；墙检测接口和换 IP curl 命令由你提供。"
+    echo "检测接口支持占位符：{ip} 当前公网IP，{domain} DNS记录名。"
+    echo ""
+
+    read -rsp "Cloudflare API Token: " cf_token
+    echo ""
+    read -rp "Cloudflare Zone ID: " cf_zone_id
+    read -rp "DNS记录完整域名(例如 hk.example.com): " cf_record_name
+    read -rp "记录类型[A/AAAA，默认A]: " cf_record_type
+    cf_record_type=${cf_record_type:-A}
+    cf_record_type=$(echo "$cf_record_type" | tr '[:lower:]' '[:upper:]')
+    [[ "$cf_record_type" != "A" && "$cf_record_type" != "AAAA" ]] && cf_record_type="A"
+    read -rp "TTL[默认1=自动]: " cf_ttl
+    cf_ttl=${cf_ttl:-1}
+    [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
+    read -rp "是否开启Cloudflare代理橙云？[y/N]: " proxied_input
+    if [[ "$proxied_input" =~ ^[Yy]$ ]]; then
+        cf_proxied=true
+    else
+        cf_proxied=false
+    fi
+    read -rp "检查间隔分钟[默认5，最大59]: " interval
+    interval=$(normalize_minutes "${interval:-5}")
+
+    read -rp "是否启用墙检测自动换IP？[y/N]: " block_input
+    block_enabled=false
+    block_url=""
+    block_keyword=""
+    block_timeout=10
+    block_threshold=3
+    change_cmd=""
+    change_wait=60
+    change_cooldown=1800
+
+    if [[ "$block_input" =~ ^[Yy]$ ]]; then
+        block_enabled=true
+        read -rp "墙检测接口URL(支持 {ip}/{domain}): " block_url
+        read -rp "返回内容包含哪个关键词表示已被墙[留空=接口curl失败才算异常]: " block_keyword
+        read -rp "检测超时时间秒[默认10]: " block_timeout
+        block_timeout=${block_timeout:-10}
+        [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
+        read -rp "连续异常多少次后换IP[默认3]: " block_threshold
+        block_threshold=${block_threshold:-3}
+        [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
+        read -rp "换IP curl完整命令(例如 curl -fsS 'https://api.xxx/change?token=xxx'): " change_cmd
+        read -rp "换IP后等待秒数[默认60]: " change_wait
+        change_wait=${change_wait:-60}
+        [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
+        read -rp "换IP冷却秒数[默认1800]: " change_cooldown
+        change_cooldown=${change_cooldown:-1800}
+        [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
+    fi
+
+    if [[ -z "$cf_token" || -z "$cf_zone_id" || -z "$cf_record_name" ]]; then
+        echo -e "${red}Cloudflare API Token / Zone ID / DNS记录名不能为空${plain}"
+        if [[ $# == 0 ]]; then
+            before_show_menu
+        fi
+        return 1
+    fi
+
+    write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
+        "$interval" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
+        "$change_cmd" "$change_wait" "$change_cooldown"
+
+    install_ddns_monitor_script || return 1
+    install_ddns_timer || return 1
+    echo -e "${green}DDNS/墙检测配置已写入 /etc/v2node/ddns.env${plain}"
+    echo -e "${yellow}正在执行一次 DDNS 检测，请稍候...${plain}"
+    /usr/local/v2node/v2node-ddns run || true
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
+run_ddns_once() {
+    if [[ ! -x /usr/local/v2node/v2node-ddns ]]; then
+        install_ddns_monitor_script || return 1
+    fi
+    /usr/local/v2node/v2node-ddns run
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
+show_ddns_status() {
+    if [[ ! -x /usr/local/v2node/v2node-ddns ]]; then
+        install_ddns_monitor_script >/dev/null 2>&1 || true
+    fi
+    if [[ -x /usr/local/v2node/v2node-ddns ]]; then
+        /usr/local/v2node/v2node-ddns status || true
+    else
+        echo -e "${red}DDNS/墙检测脚本未安装${plain}"
+    fi
+    if [[ x"${release}" != x"alpine" ]]; then
+        systemctl status v2node-ddns.timer --no-pager -l 2>/dev/null || true
+    fi
+    if [[ -f /var/log/v2node-ddns.log ]]; then
+        echo "最近日志："
+        tail -n 20 /var/log/v2node-ddns.log
+    fi
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
 # 放开防火墙端口
 open_ports() {
     systemctl stop firewalld.service 2>/dev/null
@@ -537,6 +813,10 @@ show_usage() {
     echo "v2node log          - 查看 v2node 日志"
     echo "v2node x25519       - 生成 x25519 密钥"
     echo "v2node generate     - 生成 v2node 配置文件"
+    echo "v2node ddns         - 配置 Cloudflare DDNS/墙检测自动换IP"
+    echo "v2node ddns-run     - 立即执行一次 DDNS/墙检测"
+    echo "v2node ddns-status  - 查看 DDNS/墙检测状态"
+    echo "v2node ddns-disable - 停用 DDNS/墙检测定时任务"
     echo "v2node update       - 更新 v2node"
     echo "v2node update x.x.x - 安装 v2node 指定版本"
     echo "v2node install      - 安装 v2node"
@@ -568,11 +848,17 @@ show_menu() {
   ${green}12.${plain} 升级 v2node 维护脚本
   ${green}13.${plain} 生成 v2node 配置文件
   ${green}14.${plain} 放行 VPS 的所有网络端口
-  ${green}15.${plain} 退出脚本
+————————————————
+  ${green}15.${plain} 配置 Cloudflare DDNS/墙检测自动换IP
+  ${green}16.${plain} 立即执行一次 DDNS/墙检测
+  ${green}17.${plain} 查看 DDNS/墙检测状态
+  ${green}18.${plain} 停用 DDNS/墙检测
+————————————————
+  ${green}19.${plain} 退出脚本
  "
  #后续更新可加入上方字符串中
     show_status
-    echo && read -rp "请输入选择 [0-15]: " num
+    echo && read -rp "请输入选择 [0-19]: " num
 
     case "${num}" in
         0) config ;;
@@ -590,8 +876,12 @@ show_menu() {
         12) update_shell ;;
         13) generate_config_file ;;
         14) open_ports ;;
-        15) exit ;;
-        *) echo -e "${red}请输入正确的数字 [0-15]${plain}" ;;
+        15) check_install && configure_ddns_monitor ;;
+        16) check_install && run_ddns_once ;;
+        17) show_ddns_status ;;
+        18) disable_ddns_monitor ;;
+        19) exit ;;
+        *) echo -e "${red}请输入正确的数字 [0-19]${plain}" ;;
     esac
 }
 
@@ -608,6 +898,10 @@ if [[ $# > 0 ]]; then
         "update") check_install 0 && update 0 $2 ;;
         "config") config $* ;;
         "generate") generate_config_file ;;
+        "ddns") check_install 0 && configure_ddns_monitor $2 ;;
+        "ddns-run") check_install 0 && run_ddns_once $2 ;;
+        "ddns-status") show_ddns_status $2 ;;
+        "ddns-disable") disable_ddns_monitor $2 ;;
         "install") check_uninstall 0 && install 0 ;;
         "uninstall") check_install 0 && uninstall 0 ;;
         "version") check_install 0 && show_v2node_version 0 ;;

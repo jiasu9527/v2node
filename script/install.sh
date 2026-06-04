@@ -54,6 +54,20 @@ install_management_script() {
     echo -e "${green}已覆盖本地管理脚本：/usr/bin/v2node${plain}"
 }
 
+install_ddns_monitor_script() {
+    local tmp_file="/tmp/v2node-ddns.$$.sh"
+    local target="/usr/local/v2node/v2node-ddns"
+    mkdir -p /usr/local/v2node
+    if ! download_file "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/v2node-ddns.sh" "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo -e "${yellow}下载 DDNS/墙检测脚本失败，跳过该组件${plain}"
+        return 1
+    fi
+    chmod +x "$tmp_file"
+    mv -f "$tmp_file" "$target"
+    echo -e "${green}已安装 DDNS/墙检测脚本：${target}${plain}"
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -223,23 +237,23 @@ install_base() {
             echo "安装 EPEL 源..."
             yum install -y epel-release >/dev/null 2>&1
         fi
-        need_install_yum wget curl unzip tar cronie socat ca-certificates pv
+        need_install_yum wget curl unzip tar cronie socat ca-certificates pv jq
         update-ca-trust force-enable >/dev/null 2>&1 || true
     elif [[ x"${release}" == x"alpine" ]]; then
-        need_install_apk wget curl unzip tar socat ca-certificates pv
+        need_install_apk wget curl unzip tar socat ca-certificates pv jq dcron
         update-ca-certificates >/dev/null 2>&1 || true
     elif [[ x"${release}" == x"debian" ]]; then
-        need_install_apt wget curl unzip tar cron socat ca-certificates pv
+        need_install_apt wget curl unzip tar cron socat ca-certificates pv jq
         update-ca-certificates >/dev/null 2>&1 || true
     elif [[ x"${release}" == x"ubuntu" ]]; then
-        need_install_apt wget curl unzip tar cron socat ca-certificates pv
+        need_install_apt wget curl unzip tar cron socat ca-certificates pv jq
         update-ca-certificates >/dev/null 2>&1 || true
     elif [[ x"${release}" == x"arch" ]]; then
         echo "更新包数据库..."
         pacman -Sy --noconfirm >/dev/null 2>&1
         # --needed 会跳过已安装的包，非常高效
         echo "安装必需的包..."
-        pacman -S --noconfirm --needed wget curl unzip tar cronie socat ca-certificates pv >/dev/null 2>&1
+        pacman -S --noconfirm --needed wget curl unzip tar cronie socat ca-certificates pv jq >/dev/null 2>&1
     fi
 }
 
@@ -341,6 +355,9 @@ install_v2node() {
     rm v2node-linux.zip -f
     chmod +x v2node
     echo -e "${green}已安装二进制：$(./v2node version 2>/dev/null)${plain}"
+    if [[ -f /etc/v2node/ddns.env ]]; then
+        install_ddns_monitor_script || true
+    fi
     mkdir /etc/v2node/ -p
     cp geoip.dat /etc/v2node/
     cp geosite.dat /etc/v2node/
@@ -441,6 +458,7 @@ EOF
     echo "v2node disable      - 取消 v2node 开机自启"
     echo "v2node log          - 查看 v2node 日志"
     echo "v2node generate     - 生成 v2node 配置文件"
+    echo "v2node ddns         - 配置 Cloudflare DDNS/墙检测自动换IP"
     echo "v2node update       - 更新 v2node"
     echo "v2node update x.x.x - 更新 v2node 指定版本"
     echo "v2node install      - 安装 v2node"
@@ -463,6 +481,15 @@ EOF
             generate_v2node_config "$api_host" "$node_id" "$api_key"
         else
             echo "${green}已跳过自动生成配置。如需后续生成，可执行: v2node generate${plain}"
+        fi
+
+        if [[ -t 0 ]]; then
+            read -rp "是否配置 Cloudflare DDNS/墙检测自动换IP？(y/n): " if_ddns
+            if [[ "$if_ddns" =~ ^[Yy]$ ]]; then
+                /usr/bin/v2node ddns 0 || true
+            else
+                echo "${green}已跳过 DDNS/墙检测配置。如需后续生成，可执行: v2node ddns${plain}"
+            fi
         fi
     fi
 }
