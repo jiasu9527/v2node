@@ -102,6 +102,7 @@ API_HOST_ARG=""
 NODE_ID_ARG=""
 API_KEY_ARG=""
 DDNS_ENABLE_ARG="false"
+DDNS_BLOCK_CHECK_ENABLE_ARG="false"
 DDNS_CF_TOKEN_ARG=""
 DDNS_CF_ZONE_ID_ARG=""
 DDNS_CF_RECORD_ARG=""
@@ -128,6 +129,8 @@ parse_args() {
                 API_KEY_ARG="$2"; shift 2 ;;
             --enable-ddns)
                 DDNS_ENABLE_ARG="true"; shift ;;
+            --enable-block-check)
+                DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift ;;
             --cf-token)
                 DDNS_CF_TOKEN_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
             --cf-zone-id)
@@ -141,23 +144,23 @@ parse_args() {
             --cf-proxied)
                 DDNS_CF_PROXIED_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
             --ddns-interval)
-                DDNS_INTERVAL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_INTERVAL_ARG="$2"; shift 2 ;;
             --block-check-url)
-                DDNS_BLOCK_CHECK_URL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_BLOCK_CHECK_URL_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             --block-check-keyword)
-                DDNS_BLOCK_CHECK_KEYWORD_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_BLOCK_CHECK_KEYWORD_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             --block-check-timeout)
-                DDNS_BLOCK_CHECK_TIMEOUT_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_BLOCK_CHECK_TIMEOUT_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             --block-check-threshold)
-                DDNS_BLOCK_CHECK_THRESHOLD_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_BLOCK_CHECK_THRESHOLD_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             --change-ip-curl)
-                DDNS_CHANGE_IP_CURL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_CHANGE_IP_CURL_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             --change-ip-wait)
-                DDNS_CHANGE_IP_WAIT_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_CHANGE_IP_WAIT_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             --change-ip-cooldown)
-                DDNS_CHANGE_IP_COOLDOWN_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+                DDNS_CHANGE_IP_COOLDOWN_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             -h|--help)
-                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN]"
+                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
                 echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
                 echo "墙检测可选参数: --block-check-url URL(默认https://www.baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
                 exit 0 ;;
@@ -366,31 +369,42 @@ EOF
 }
 
 configure_ddns_from_args() {
-    [[ "$DDNS_ENABLE_ARG" == "true" ]] || return 0
+    [[ "$DDNS_ENABLE_ARG" == "true" || "$DDNS_BLOCK_CHECK_ENABLE_ARG" == "true" ]] || return 0
 
-    if [[ -z "$DDNS_CF_TOKEN_ARG" || -z "$DDNS_CF_ZONE_ID_ARG" || -z "$DDNS_CF_RECORD_ARG" ]]; then
-        echo -e "${red}已启用 DDNS，但缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
-        return 1
+    if [[ "$DDNS_ENABLE_ARG" == "true" ]]; then
+        if [[ -z "$DDNS_CF_TOKEN_ARG" || -z "$DDNS_CF_ZONE_ID_ARG" || -z "$DDNS_CF_RECORD_ARG" ]]; then
+            echo -e "${red}已启用 DDNS，但缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
+            return 1
+        fi
     fi
 
     local ddns_args=(
         ddns-set
-        --cf-token "$DDNS_CF_TOKEN_ARG"
-        --cf-zone-id "$DDNS_CF_ZONE_ID_ARG"
-        --cf-record "$DDNS_CF_RECORD_ARG"
-        --cf-record-type "$DDNS_CF_RECORD_TYPE_ARG"
-        --cf-ttl "$DDNS_CF_TTL_ARG"
-        --cf-proxied "$DDNS_CF_PROXIED_ARG"
         --ddns-interval "$DDNS_INTERVAL_ARG"
-        --block-check-timeout "$DDNS_BLOCK_CHECK_TIMEOUT_ARG"
-        --block-check-threshold "$DDNS_BLOCK_CHECK_THRESHOLD_ARG"
-        --change-ip-wait "$DDNS_CHANGE_IP_WAIT_ARG"
-        --change-ip-cooldown "$DDNS_CHANGE_IP_COOLDOWN_ARG"
     )
 
-    [[ -n "$DDNS_BLOCK_CHECK_URL_ARG" ]] && ddns_args+=(--block-check-url "$DDNS_BLOCK_CHECK_URL_ARG")
-    [[ -n "$DDNS_BLOCK_CHECK_KEYWORD_ARG" ]] && ddns_args+=(--block-check-keyword "$DDNS_BLOCK_CHECK_KEYWORD_ARG")
-    [[ -n "$DDNS_CHANGE_IP_CURL_ARG" ]] && ddns_args+=(--change-ip-curl "$DDNS_CHANGE_IP_CURL_ARG")
+    if [[ "$DDNS_ENABLE_ARG" == "true" ]]; then
+        ddns_args+=(
+            --enable-ddns
+            --cf-token "$DDNS_CF_TOKEN_ARG"
+            --cf-zone-id "$DDNS_CF_ZONE_ID_ARG"
+            --cf-record "$DDNS_CF_RECORD_ARG"
+            --cf-record-type "$DDNS_CF_RECORD_TYPE_ARG"
+            --cf-ttl "$DDNS_CF_TTL_ARG"
+            --cf-proxied "$DDNS_CF_PROXIED_ARG"
+        )
+    fi
+
+    if [[ "$DDNS_BLOCK_CHECK_ENABLE_ARG" == "true" ]]; then
+        ddns_args+=(--enable-block-check)
+        [[ -n "$DDNS_BLOCK_CHECK_URL_ARG" ]] && ddns_args+=(--block-check-url "$DDNS_BLOCK_CHECK_URL_ARG")
+        [[ -n "$DDNS_BLOCK_CHECK_KEYWORD_ARG" ]] && ddns_args+=(--block-check-keyword "$DDNS_BLOCK_CHECK_KEYWORD_ARG")
+        ddns_args+=(--block-check-timeout "$DDNS_BLOCK_CHECK_TIMEOUT_ARG")
+        ddns_args+=(--block-check-threshold "$DDNS_BLOCK_CHECK_THRESHOLD_ARG")
+        [[ -n "$DDNS_CHANGE_IP_CURL_ARG" ]] && ddns_args+=(--change-ip-curl "$DDNS_CHANGE_IP_CURL_ARG")
+        ddns_args+=(--change-ip-wait "$DDNS_CHANGE_IP_WAIT_ARG")
+        ddns_args+=(--change-ip-cooldown "$DDNS_CHANGE_IP_COOLDOWN_ARG")
+    fi
 
     /usr/bin/v2node "${ddns_args[@]}"
 }

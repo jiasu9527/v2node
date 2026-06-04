@@ -23,7 +23,7 @@ fail() {
 usage() {
     cat <<EOF
 v2node-ddns usage:
-  v2node-ddns run       执行一次 DDNS 更新和墙检测
+  v2node-ddns run       执行一次 DDNS 更新和/或墙检测
   v2node-ddns status    查看配置摘要和最近状态
   v2node-ddns help      显示帮助
 
@@ -48,15 +48,12 @@ load_config() {
     : "${CF_TTL:=1}"
     : "${CF_PROXIED:=false}"
     : "${CHECK_INTERVAL_MINUTES:=1}"
+    : "${DDNS_UPDATE_ENABLED:=false}"
     : "${BLOCK_CHECK_ENABLED:=false}"
     : "${BLOCK_CHECK_TIMEOUT:=10}"
     : "${BLOCK_CHECK_FAIL_THRESHOLD:=3}"
     : "${CHANGE_IP_WAIT_SECONDS:=60}"
     : "${CHANGE_IP_COOLDOWN_SECONDS:=1800}"
-
-    [[ -n "${CF_API_TOKEN:-}" ]] || return 1
-    [[ -n "${CF_ZONE_ID:-}" ]] || return 1
-    [[ -n "${CF_RECORD_NAME:-}" ]] || return 1
 
     CF_RECORD_TYPE="$(echo "$CF_RECORD_TYPE" | tr '[:lower:]' '[:upper:]')"
     if [[ "$CF_RECORD_TYPE" != "A" && "$CF_RECORD_TYPE" != "AAAA" ]]; then
@@ -65,6 +62,11 @@ load_config() {
     fi
 
     [[ "$CF_TTL" =~ ^[0-9]+$ ]] || CF_TTL=1
+    if [[ "$(normalize_bool "${DDNS_UPDATE_ENABLED}")" == "true" ]]; then
+        [[ -n "${CF_API_TOKEN:-}" ]] || return 1
+        [[ -n "${CF_ZONE_ID:-}" ]] || return 1
+        [[ -n "${CF_RECORD_NAME:-}" ]] || return 1
+    fi
     [[ "$BLOCK_CHECK_TIMEOUT" =~ ^[0-9]+$ ]] || BLOCK_CHECK_TIMEOUT=10
     [[ "$BLOCK_CHECK_FAIL_THRESHOLD" =~ ^[0-9]+$ ]] || BLOCK_CHECK_FAIL_THRESHOLD=3
     [[ "$CHANGE_IP_WAIT_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_WAIT_SECONDS=60
@@ -271,7 +273,7 @@ run_change_ip_command() {
         log "换 IP curl 命令执行失败，退出码: ${code}"
         return $code
     fi
-    log "换 IP curl 命令执行完成，等待 ${CHANGE_IP_WAIT_SECONDS}s 后刷新 DDNS"
+    log "换 IP curl 命令执行完成，等待 ${CHANGE_IP_WAIT_SECONDS}s 后继续"
     sleep "${CHANGE_IP_WAIT_SECONDS}"
 }
 
@@ -289,35 +291,46 @@ run_once() {
     require_cmd curl jq
     load_state
 
-    local ip now threshold cooldown
+    local ip now threshold cooldown ddns_enabled block_enabled
+    ddns_enabled="$(normalize_bool "${DDNS_UPDATE_ENABLED}")"
+    block_enabled="$(normalize_bool "${BLOCK_CHECK_ENABLED}")"
     ip="$(get_public_ip)" || fail "获取当前公网 IP 失败"
     LAST_IP="$ip"
-    cf_upsert_record "$ip" || fail "Cloudflare DDNS 更新失败"
 
-    if check_blocked "$ip"; then
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
-        cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
-        now="$(date +%s)"
-        log "墙检测异常次数: ${FAIL_COUNT}/${threshold}"
+    if [[ "$ddns_enabled" == "true" ]]; then
+        cf_upsert_record "$ip" || fail "Cloudflare DDNS 更新失败"
+    fi
 
-        if (( FAIL_COUNT >= threshold )); then
-            if (( LAST_CHANGE_TS > 0 && now - LAST_CHANGE_TS < cooldown )); then
-                log "仍在换 IP 冷却期，剩余 $((cooldown - (now - LAST_CHANGE_TS)))s"
-            else
-                if run_change_ip_command; then
-                    LAST_CHANGE_TS="$(date +%s)"
-                    FAIL_COUNT=0
-                    ip="$(get_public_ip)" || fail "换 IP 后获取公网 IP 失败"
-                    LAST_IP="$ip"
-                    cf_upsert_record "$ip" || fail "换 IP 后 Cloudflare DDNS 更新失败"
+    if [[ "$block_enabled" == "true" ]]; then
+        if check_blocked "$ip"; then
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
+            cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
+            now="$(date +%s)"
+            log "墙检测异常次数: ${FAIL_COUNT}/${threshold}"
+
+            if (( FAIL_COUNT >= threshold )); then
+                if (( LAST_CHANGE_TS > 0 && now - LAST_CHANGE_TS < cooldown )); then
+                    log "仍在换 IP 冷却期，剩余 $((cooldown - (now - LAST_CHANGE_TS)))s"
+                else
+                    if run_change_ip_command; then
+                        LAST_CHANGE_TS="$(date +%s)"
+                        FAIL_COUNT=0
+                        ip="$(get_public_ip)" || fail "换 IP 后获取公网 IP 失败"
+                        LAST_IP="$ip"
+                        if [[ "$ddns_enabled" == "true" ]]; then
+                            cf_upsert_record "$ip" || fail "换 IP 后 Cloudflare DDNS 更新失败"
+                        fi
+                    fi
                 fi
             fi
+        else
+            if (( FAIL_COUNT > 0 )); then
+                log "墙检测恢复正常，清零异常计数"
+            fi
+            FAIL_COUNT=0
         fi
     else
-        if (( FAIL_COUNT > 0 )); then
-            log "墙检测恢复正常，清零异常计数"
-        fi
         FAIL_COUNT=0
     fi
 
@@ -340,10 +353,13 @@ show_status() {
     fi
     load_state
     echo "DDNS 配置: ${CONFIG_FILE}"
-    echo "Cloudflare Record: ${CF_RECORD_NAME} ${CF_RECORD_TYPE}"
-    echo "Zone ID: $(mask "${CF_ZONE_ID}")"
-    echo "API Token: $(mask "${CF_API_TOKEN}")"
-    echo "Proxied: $(normalize_bool "${CF_PROXIED}")"
+    echo "DDNS 更新: $(normalize_bool "${DDNS_UPDATE_ENABLED}")"
+    if [[ "$(normalize_bool "${DDNS_UPDATE_ENABLED}")" == "true" ]]; then
+        echo "Cloudflare Record: ${CF_RECORD_NAME} ${CF_RECORD_TYPE}"
+        echo "Zone ID: $(mask "${CF_ZONE_ID}")"
+        echo "API Token: $(mask "${CF_API_TOKEN}")"
+        echo "Proxied: $(normalize_bool "${CF_PROXIED}")"
+    fi
     echo "检查间隔: ${CHECK_INTERVAL_MINUTES} 分钟"
     echo "墙检测: $(normalize_bool "${BLOCK_CHECK_ENABLED}")"
     if [[ -n "${BLOCK_CHECK_URL:-}" ]]; then

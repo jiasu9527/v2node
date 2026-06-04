@@ -569,14 +569,15 @@ write_ddns_config() {
     local cf_ttl="$5"
     local cf_proxied="$6"
     local interval="$7"
-    local block_enabled="$8"
-    local block_url="$9"
-    local block_keyword="${10}"
-    local block_timeout="${11}"
-    local block_threshold="${12}"
-    local change_cmd="${13}"
-    local change_wait="${14}"
-    local change_cooldown="${15}"
+    local ddns_enabled="$8"
+    local block_enabled="$9"
+    local block_url="${10}"
+    local block_keyword="${11}"
+    local block_timeout="${12}"
+    local block_threshold="${13}"
+    local change_cmd="${14}"
+    local change_wait="${15}"
+    local change_cooldown="${16}"
 
     mkdir -p /etc/v2node
     umask 077
@@ -588,6 +589,7 @@ CF_RECORD_TYPE=$(env_quote "$cf_record_type")
 CF_TTL=${cf_ttl}
 CF_PROXIED=${cf_proxied}
 CHECK_INTERVAL_MINUTES=${interval}
+DDNS_UPDATE_ENABLED=${ddns_enabled}
 BLOCK_CHECK_ENABLED=${block_enabled}
 BLOCK_CHECK_URL=$(env_quote "$block_url")
 BLOCK_CHECK_BLOCKED_KEYWORD=$(env_quote "$block_keyword")
@@ -680,36 +682,47 @@ configure_ddns_monitor() {
     echo "检测接口支持占位符：{ip} 当前公网IP，{domain} DNS记录名。"
     echo ""
 
-    read -rsp "Cloudflare API Token: " cf_token
-    echo ""
-    read -rp "Cloudflare Zone ID: " cf_zone_id
-    read -rp "DNS记录完整域名(例如 hk.example.com): " cf_record_name
-    read -rp "记录类型[A/AAAA，默认A]: " cf_record_type
-    cf_record_type=${cf_record_type:-A}
-    cf_record_type=$(echo "$cf_record_type" | tr '[:lower:]' '[:upper:]')
-    [[ "$cf_record_type" != "A" && "$cf_record_type" != "AAAA" ]] && cf_record_type="A"
-    read -rp "TTL[默认1=自动]: " cf_ttl
-    cf_ttl=${cf_ttl:-1}
-    [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
-    read -rp "是否开启Cloudflare代理橙云？[y/N]: " proxied_input
-    if [[ "$proxied_input" =~ ^[Yy]$ ]]; then
-        cf_proxied=true
-    else
-        cf_proxied=false
+    local ddns_enabled=false
+    local block_enabled=false
+    local cf_token=""
+    local cf_zone_id=""
+    local cf_record_name=""
+    local cf_record_type="A"
+    local cf_ttl=1
+    local cf_proxied=false
+    local interval
+    local block_url=""
+    local block_keyword=""
+    local block_timeout=10
+    local block_threshold=3
+    local change_cmd=""
+    local change_wait=60
+    local change_cooldown=1800
+
+    read -rp "是否启用 DDNS 解析更新？[y/N]: " ddns_input
+    if [[ "$ddns_input" =~ ^[Yy]$ ]]; then
+        ddns_enabled=true
+        read -rsp "Cloudflare API Token: " cf_token
+        echo ""
+        read -rp "Cloudflare Zone ID: " cf_zone_id
+        read -rp "DNS记录完整域名(例如 hk.example.com): " cf_record_name
+        read -rp "记录类型[A/AAAA，默认A]: " cf_record_type
+        cf_record_type=${cf_record_type:-A}
+        cf_record_type=$(echo "$cf_record_type" | tr '[:lower:]' '[:upper:]')
+        [[ "$cf_record_type" != "A" && "$cf_record_type" != "AAAA" ]] && cf_record_type="A"
+        read -rp "TTL[默认1=自动]: " cf_ttl
+        cf_ttl=${cf_ttl:-1}
+        [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
+        read -rp "是否开启Cloudflare代理橙云？[y/N]: " proxied_input
+        if [[ "$proxied_input" =~ ^[Yy]$ ]]; then
+            cf_proxied=true
+        fi
     fi
+
     read -rp "检查间隔分钟[默认1，最大59]: " interval
     interval=$(normalize_minutes "${interval:-5}")
 
-    read -rp "是否启用墙检测自动换IP？[y/N]: " block_input
-    block_enabled=false
-    block_url=""
-    block_keyword=""
-    block_timeout=10
-    block_threshold=3
-    change_cmd=""
-    change_wait=60
-    change_cooldown=1800
-
+    read -rp "是否启用被墙检测自动换IP？[y/N]: " block_input
     if [[ "$block_input" =~ ^[Yy]$ ]]; then
         block_enabled=true
         read -rp "墙检测接口URL[默认 https://www.baidu.com/，支持 {ip}/{domain}]: " block_url
@@ -730,16 +743,26 @@ configure_ddns_monitor() {
         [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
     fi
 
-    if [[ -z "$cf_token" || -z "$cf_zone_id" || -z "$cf_record_name" ]]; then
-        echo -e "${red}Cloudflare API Token / Zone ID / DNS记录名不能为空${plain}"
+    if [[ "$ddns_enabled" != "true" && "$block_enabled" != "true" ]]; then
+        echo -e "${yellow}未启用 DDNS 或被墙检测，已取消配置${plain}"
         if [[ $# == 0 ]]; then
             before_show_menu
         fi
-        return 1
+        return 0
+    fi
+
+    if [[ "$ddns_enabled" == "true" ]]; then
+        if [[ -z "$cf_token" || -z "$cf_zone_id" || -z "$cf_record_name" ]]; then
+            echo -e "${red}Cloudflare API Token / Zone ID / DNS记录名不能为空${plain}"
+            if [[ $# == 0 ]]; then
+                before_show_menu
+            fi
+            return 1
+        fi
     fi
 
     write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
-        "$interval" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
+        "$interval" "$ddns_enabled" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
         "$change_cmd" "$change_wait" "$change_cooldown"
 
     install_ddns_monitor_script || return 1
@@ -768,26 +791,29 @@ configure_ddns_monitor_from_args() {
     local change_cmd=""
     local change_wait="60"
     local change_cooldown="1800"
+    local ddns_enabled="false"
     local block_enabled="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --cf-token) cf_token="$2"; shift 2 ;;
-            --cf-zone-id) cf_zone_id="$2"; shift 2 ;;
-            --cf-record) cf_record_name="$2"; shift 2 ;;
-            --cf-record-type) cf_record_type="$2"; shift 2 ;;
-            --cf-ttl) cf_ttl="$2"; shift 2 ;;
-            --cf-proxied) cf_proxied="$2"; shift 2 ;;
+            --enable-ddns) ddns_enabled="true"; shift ;;
+            --enable-block-check) block_enabled="true"; shift ;;
+            --cf-token) cf_token="$2"; ddns_enabled="true"; shift 2 ;;
+            --cf-zone-id) cf_zone_id="$2"; ddns_enabled="true"; shift 2 ;;
+            --cf-record) cf_record_name="$2"; ddns_enabled="true"; shift 2 ;;
+            --cf-record-type) cf_record_type="$2"; ddns_enabled="true"; shift 2 ;;
+            --cf-ttl) cf_ttl="$2"; ddns_enabled="true"; shift 2 ;;
+            --cf-proxied) cf_proxied="$2"; ddns_enabled="true"; shift 2 ;;
             --ddns-interval) interval="$2"; shift 2 ;;
             --block-check-url) block_url="$2"; block_enabled="true"; shift 2 ;;
             --block-check-keyword) block_keyword="$2"; block_enabled="true"; shift 2 ;;
             --block-check-timeout) block_timeout="$2"; block_enabled="true"; shift 2 ;;
             --block-check-threshold) block_threshold="$2"; block_enabled="true"; shift 2 ;;
             --change-ip-curl) change_cmd="$2"; block_enabled="true"; shift 2 ;;
-            --change-ip-wait) change_wait="$2"; shift 2 ;;
-            --change-ip-cooldown) change_cooldown="$2"; shift 2 ;;
+            --change-ip-wait) change_wait="$2"; block_enabled="true"; shift 2 ;;
+            --change-ip-cooldown) change_cooldown="$2"; block_enabled="true"; shift 2 ;;
             -h|--help)
-                echo "用法: v2node ddns-set --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN [--block-check-url URL --change-ip-curl CMD]"
+                echo "用法: v2node ddns-set [--enable-ddns --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
                 return 0 ;;
             *)
                 echo -e "${red}未知 DDNS 参数: $1${plain}"
@@ -809,17 +835,24 @@ configure_ddns_monitor_from_args() {
         cf_proxied=false
     fi
 
-    if [[ -z "$cf_token" || -z "$cf_zone_id" || -z "$cf_record_name" ]]; then
-        echo -e "${red}缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
-        return 1
+    if [[ "$ddns_enabled" == "true" ]]; then
+        if [[ -z "$cf_token" || -z "$cf_zone_id" || -z "$cf_record_name" ]]; then
+            echo -e "${red}缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
+            return 1
+        fi
     fi
     if [[ "$block_enabled" == "true" && -z "$block_url" ]]; then
         block_url="https://www.baidu.com/"
     fi
 
+    if [[ "$ddns_enabled" != "true" && "$block_enabled" != "true" ]]; then
+        echo -e "${yellow}未启用 DDNS 或被墙检测，跳过配置${plain}"
+        return 0
+    fi
+
     ensure_ddns_dependencies
     write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
-        "$interval" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
+        "$interval" "$ddns_enabled" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
         "$change_cmd" "$change_wait" "$change_cooldown"
 
     install_ddns_monitor_script || return 1
