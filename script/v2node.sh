@@ -555,7 +555,7 @@ ensure_ddns_dependencies() {
 
 normalize_minutes() {
     local value="$1"
-    [[ "$value" =~ ^[0-9]+$ ]] || value=5
+    [[ "$value" =~ ^[0-9]+$ ]] || value=1
     (( value < 1 )) && value=1
     (( value > 59 )) && value=59
     echo "$value"
@@ -601,11 +601,11 @@ EOF
 }
 
 load_ddns_interval() {
-    local interval=5
+    local interval=1
     if [[ -f /etc/v2node/ddns.env ]]; then
         # shellcheck source=/dev/null
         . /etc/v2node/ddns.env
-        interval="${CHECK_INTERVAL_MINUTES:-5}"
+        interval="${CHECK_INTERVAL_MINUTES:-1}"
     fi
     normalize_minutes "$interval"
 }
@@ -697,7 +697,7 @@ configure_ddns_monitor() {
     else
         cf_proxied=false
     fi
-    read -rp "检查间隔分钟[默认5，最大59]: " interval
+    read -rp "检查间隔分钟[默认1，最大59]: " interval
     interval=$(normalize_minutes "${interval:-5}")
 
     read -rp "是否启用墙检测自动换IP？[y/N]: " block_input
@@ -759,7 +759,7 @@ configure_ddns_monitor_from_args() {
     local cf_record_type="A"
     local cf_ttl="1"
     local cf_proxied="false"
-    local interval="5"
+    local interval="1"
     local block_url=""
     local block_keyword=""
     local block_timeout="10"

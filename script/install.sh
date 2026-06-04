@@ -108,7 +108,7 @@ DDNS_CF_RECORD_ARG=""
 DDNS_CF_RECORD_TYPE_ARG="A"
 DDNS_CF_TTL_ARG="1"
 DDNS_CF_PROXIED_ARG="false"
-DDNS_INTERVAL_ARG="5"
+DDNS_INTERVAL_ARG="1"
 DDNS_BLOCK_CHECK_URL_ARG=""
 DDNS_BLOCK_CHECK_KEYWORD_ARG=""
 DDNS_BLOCK_CHECK_TIMEOUT_ARG="10"
@@ -158,7 +158,7 @@ parse_args() {
                 DDNS_CHANGE_IP_COOLDOWN_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
             -h|--help)
                 echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN]"
-                echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 5"
+                echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
                 echo "墙检测可选参数: --block-check-url URL --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
                 exit 0 ;;
             --*)

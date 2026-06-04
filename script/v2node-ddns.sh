@@ -47,7 +47,7 @@ load_config() {
     : "${CF_RECORD_TYPE:=A}"
     : "${CF_TTL:=1}"
     : "${CF_PROXIED:=false}"
-    : "${CHECK_INTERVAL_MINUTES:=5}"
+    : "${CHECK_INTERVAL_MINUTES:=1}"
     : "${BLOCK_CHECK_ENABLED:=false}"
     : "${BLOCK_CHECK_TIMEOUT:=10}"
     : "${BLOCK_CHECK_FAIL_THRESHOLD:=3}"

@@ -22,6 +22,7 @@ v2node ddns-disable
 ```
 
 DDNS 仅内置 Cloudflare；墙检测接口和换 IP API 使用安装时输入的 curl 命令，检测接口支持 `{ip}` / `{domain}` 占位符。
+默认每 1 分钟检查一次，只有 IP 变化时才更新 Cloudflare 解析。
 
 非交互安装可追加 DDNS 参数：
 
