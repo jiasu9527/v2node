@@ -160,8 +160,8 @@ parse_args() {
             --change-ip-cooldown)
                 DDNS_CHANGE_IP_COOLDOWN_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             -h|--help)
-                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
-                echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
+                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
+                echo "DDNS可选参数: --cf-zone-id ZONE(留空自动识别) --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
                 echo "墙检测可选参数: --block-check-url URL(默认https://www.baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
                 exit 0 ;;
             --*)
@@ -372,8 +372,8 @@ configure_ddns_from_args() {
     [[ "$DDNS_ENABLE_ARG" == "true" || "$DDNS_BLOCK_CHECK_ENABLE_ARG" == "true" ]] || return 0
 
     if [[ "$DDNS_ENABLE_ARG" == "true" ]]; then
-        if [[ -z "$DDNS_CF_TOKEN_ARG" || -z "$DDNS_CF_ZONE_ID_ARG" || -z "$DDNS_CF_RECORD_ARG" ]]; then
-            echo -e "${red}已启用 DDNS，但缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
+        if [[ -z "$DDNS_CF_TOKEN_ARG" || -z "$DDNS_CF_RECORD_ARG" ]]; then
+            echo -e "${red}已启用 DDNS，但缺少 --cf-token / --cf-record${plain}"
             return 1
         fi
     fi
@@ -387,12 +387,12 @@ configure_ddns_from_args() {
         ddns_args+=(
             --enable-ddns
             --cf-token "$DDNS_CF_TOKEN_ARG"
-            --cf-zone-id "$DDNS_CF_ZONE_ID_ARG"
             --cf-record "$DDNS_CF_RECORD_ARG"
             --cf-record-type "$DDNS_CF_RECORD_TYPE_ARG"
             --cf-ttl "$DDNS_CF_TTL_ARG"
             --cf-proxied "$DDNS_CF_PROXIED_ARG"
         )
+        [[ -n "$DDNS_CF_ZONE_ID_ARG" ]] && ddns_args+=(--cf-zone-id "$DDNS_CF_ZONE_ID_ARG")
     fi
 
     if [[ "$DDNS_BLOCK_CHECK_ENABLE_ARG" == "true" ]]; then

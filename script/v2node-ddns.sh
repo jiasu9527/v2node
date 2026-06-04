@@ -61,10 +61,13 @@ load_config() {
         return 1
     fi
 
+    CF_RECORD_NAME="${CF_RECORD_NAME:-}"
+    CF_RECORD_NAME="${CF_RECORD_NAME%.}"
+    CF_RECORD_NAME="$(echo "$CF_RECORD_NAME" | tr '[:upper:]' '[:lower:]')"
+
     [[ "$CF_TTL" =~ ^[0-9]+$ ]] || CF_TTL=1
     if [[ "$(normalize_bool "${DDNS_UPDATE_ENABLED}")" == "true" ]]; then
         [[ -n "${CF_API_TOKEN:-}" ]] || return 1
-        [[ -n "${CF_ZONE_ID:-}" ]] || return 1
         [[ -n "${CF_RECORD_NAME:-}" ]] || return 1
     fi
     [[ "$BLOCK_CHECK_TIMEOUT" =~ ^[0-9]+$ ]] || BLOCK_CHECK_TIMEOUT=10
@@ -141,7 +144,53 @@ cf_headers() {
         "$@"
 }
 
+cf_ensure_zone_id() {
+    local response success zone_info zone_id zone_name
+
+    if [[ -n "${CF_ZONE_ID:-}" ]]; then
+        return 0
+    fi
+
+    response="$(cf_headers -G "https://api.cloudflare.com/client/v4/zones" \
+        --data-urlencode "per_page=100")" || {
+        log "Cloudflare 自动识别 Zone ID 失败：无法读取 zones，请确认 API Token 有 Zone:Read 权限"
+        return 1
+    }
+
+    success="$(echo "$response" | jq -r '.success // false')"
+    [[ "$success" == "true" ]] || {
+        log "Cloudflare 自动识别 Zone ID 失败: $(echo "$response" | jq -c '.errors // []')"
+        return 1
+    }
+
+    zone_info="$(echo "$response" | jq -r --arg record "$CF_RECORD_NAME" '
+        [.result[]
+            | .name as $zone
+            | select($record == $zone or ($record | endswith("." + $zone)))
+            | {id, name}]
+        | sort_by(.name | length)
+        | last
+        | if . then "\(.id)\t\(.name)" else "" end
+    ')"
+
+    if [[ -z "$zone_info" ]]; then
+        log "Cloudflare 自动识别 Zone ID 失败：${CF_RECORD_NAME} 不在当前 Token 可访问的域名列表中"
+        return 1
+    fi
+
+    zone_id="${zone_info%%$'\t'*}"
+    zone_name="${zone_info#*$'\t'}"
+    if [[ -z "$zone_id" || "$zone_id" == "$zone_name" ]]; then
+        log "Cloudflare 自动识别 Zone ID 失败：返回数据格式异常"
+        return 1
+    fi
+
+    CF_ZONE_ID="$zone_id"
+    log "Cloudflare 自动识别 Zone ID 成功: ${zone_name}"
+}
+
 cf_get_record() {
+    cf_ensure_zone_id || return 1
     cf_headers -G "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records" \
         --data-urlencode "type=${CF_RECORD_TYPE}" \
         --data-urlencode "name=${CF_RECORD_NAME}"
@@ -356,7 +405,11 @@ show_status() {
     echo "DDNS 更新: $(normalize_bool "${DDNS_UPDATE_ENABLED}")"
     if [[ "$(normalize_bool "${DDNS_UPDATE_ENABLED}")" == "true" ]]; then
         echo "Cloudflare Record: ${CF_RECORD_NAME} ${CF_RECORD_TYPE}"
-        echo "Zone ID: $(mask "${CF_ZONE_ID}")"
+        if [[ -n "${CF_ZONE_ID:-}" ]]; then
+            echo "Zone ID: $(mask "${CF_ZONE_ID}")"
+        else
+            echo "Zone ID: 自动识别"
+        fi
         echo "API Token: $(mask "${CF_API_TOKEN}")"
         echo "Proxied: $(normalize_bool "${CF_PROXIED}")"
     fi
