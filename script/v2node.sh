@@ -704,7 +704,6 @@ configure_ddns_monitor() {
         ddns_enabled=true
         read -rsp "Cloudflare API Token: " cf_token
         echo ""
-        read -rp "Cloudflare Zone ID[留空自动识别]: " cf_zone_id
         read -rp "DNS记录完整域名(例如 hk.example.com): " cf_record_name
         read -rp "记录类型[A/AAAA，默认A]: " cf_record_type
         cf_record_type=${cf_record_type:-A}
@@ -814,7 +813,6 @@ configure_ddns_monitor_from_args() {
             --change-ip-cooldown) change_cooldown="$2"; block_enabled="true"; shift 2 ;;
             -h|--help)
                 echo "用法: v2node ddns-set [--enable-ddns --cf-token TOKEN --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
-                echo "DDNS可选参数: --cf-zone-id ZONE(留空自动识别)"
                 return 0 ;;
             *)
                 echo -e "${red}未知 DDNS 参数: $1${plain}"
