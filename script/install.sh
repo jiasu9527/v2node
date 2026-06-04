@@ -101,6 +101,21 @@ VERSION_ARG=""
 API_HOST_ARG=""
 NODE_ID_ARG=""
 API_KEY_ARG=""
+DDNS_ENABLE_ARG="false"
+DDNS_CF_TOKEN_ARG=""
+DDNS_CF_ZONE_ID_ARG=""
+DDNS_CF_RECORD_ARG=""
+DDNS_CF_RECORD_TYPE_ARG="A"
+DDNS_CF_TTL_ARG="1"
+DDNS_CF_PROXIED_ARG="false"
+DDNS_INTERVAL_ARG="5"
+DDNS_BLOCK_CHECK_URL_ARG=""
+DDNS_BLOCK_CHECK_KEYWORD_ARG=""
+DDNS_BLOCK_CHECK_TIMEOUT_ARG="10"
+DDNS_BLOCK_CHECK_THRESHOLD_ARG="3"
+DDNS_CHANGE_IP_CURL_ARG=""
+DDNS_CHANGE_IP_WAIT_ARG="60"
+DDNS_CHANGE_IP_COOLDOWN_ARG="1800"
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
@@ -111,8 +126,40 @@ parse_args() {
                 NODE_ID_ARG="$2"; shift 2 ;;
             --api-key)
                 API_KEY_ARG="$2"; shift 2 ;;
+            --enable-ddns)
+                DDNS_ENABLE_ARG="true"; shift ;;
+            --cf-token)
+                DDNS_CF_TOKEN_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --cf-zone-id)
+                DDNS_CF_ZONE_ID_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --cf-record)
+                DDNS_CF_RECORD_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --cf-record-type)
+                DDNS_CF_RECORD_TYPE_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --cf-ttl)
+                DDNS_CF_TTL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --cf-proxied)
+                DDNS_CF_PROXIED_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --ddns-interval)
+                DDNS_INTERVAL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --block-check-url)
+                DDNS_BLOCK_CHECK_URL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --block-check-keyword)
+                DDNS_BLOCK_CHECK_KEYWORD_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --block-check-timeout)
+                DDNS_BLOCK_CHECK_TIMEOUT_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --block-check-threshold)
+                DDNS_BLOCK_CHECK_THRESHOLD_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --change-ip-curl)
+                DDNS_CHANGE_IP_CURL_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --change-ip-wait)
+                DDNS_CHANGE_IP_WAIT_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
+            --change-ip-cooldown)
+                DDNS_CHANGE_IP_COOLDOWN_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
             -h|--help)
-                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY]"
+                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN]"
+                echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 5"
+                echo "墙检测可选参数: --block-check-url URL --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
                 exit 0 ;;
             --*)
                 echo "未知参数: $1"; exit 1 ;;
@@ -318,6 +365,36 @@ EOF
         fi
 }
 
+configure_ddns_from_args() {
+    [[ "$DDNS_ENABLE_ARG" == "true" ]] || return 0
+
+    if [[ -z "$DDNS_CF_TOKEN_ARG" || -z "$DDNS_CF_ZONE_ID_ARG" || -z "$DDNS_CF_RECORD_ARG" ]]; then
+        echo -e "${red}已启用 DDNS，但缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
+        return 1
+    fi
+
+    local ddns_args=(
+        ddns-set
+        --cf-token "$DDNS_CF_TOKEN_ARG"
+        --cf-zone-id "$DDNS_CF_ZONE_ID_ARG"
+        --cf-record "$DDNS_CF_RECORD_ARG"
+        --cf-record-type "$DDNS_CF_RECORD_TYPE_ARG"
+        --cf-ttl "$DDNS_CF_TTL_ARG"
+        --cf-proxied "$DDNS_CF_PROXIED_ARG"
+        --ddns-interval "$DDNS_INTERVAL_ARG"
+        --block-check-timeout "$DDNS_BLOCK_CHECK_TIMEOUT_ARG"
+        --block-check-threshold "$DDNS_BLOCK_CHECK_THRESHOLD_ARG"
+        --change-ip-wait "$DDNS_CHANGE_IP_WAIT_ARG"
+        --change-ip-cooldown "$DDNS_CHANGE_IP_COOLDOWN_ARG"
+    )
+
+    [[ -n "$DDNS_BLOCK_CHECK_URL_ARG" ]] && ddns_args+=(--block-check-url "$DDNS_BLOCK_CHECK_URL_ARG")
+    [[ -n "$DDNS_BLOCK_CHECK_KEYWORD_ARG" ]] && ddns_args+=(--block-check-keyword "$DDNS_BLOCK_CHECK_KEYWORD_ARG")
+    [[ -n "$DDNS_CHANGE_IP_CURL_ARG" ]] && ddns_args+=(--change-ip-curl "$DDNS_CHANGE_IP_CURL_ARG")
+
+    /usr/bin/v2node "${ddns_args[@]}"
+}
+
 install_v2node() {
     local version_param="$1"
     if [[ -e /usr/local/v2node/ ]]; then
@@ -442,6 +519,9 @@ EOF
 
     if ! install_management_script; then
         exit 1
+    fi
+    if ! configure_ddns_from_args; then
+        echo -e "${red}DDNS/墙检测配置失败，请稍后执行 v2node ddns 重新配置${plain}"
     fi
 
     cd $cur_dir

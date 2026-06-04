@@ -752,6 +752,82 @@ configure_ddns_monitor() {
     fi
 }
 
+configure_ddns_monitor_from_args() {
+    local cf_token=""
+    local cf_zone_id=""
+    local cf_record_name=""
+    local cf_record_type="A"
+    local cf_ttl="1"
+    local cf_proxied="false"
+    local interval="5"
+    local block_url=""
+    local block_keyword=""
+    local block_timeout="10"
+    local block_threshold="3"
+    local change_cmd=""
+    local change_wait="60"
+    local change_cooldown="1800"
+    local block_enabled="false"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --cf-token) cf_token="$2"; shift 2 ;;
+            --cf-zone-id) cf_zone_id="$2"; shift 2 ;;
+            --cf-record) cf_record_name="$2"; shift 2 ;;
+            --cf-record-type) cf_record_type="$2"; shift 2 ;;
+            --cf-ttl) cf_ttl="$2"; shift 2 ;;
+            --cf-proxied) cf_proxied="$2"; shift 2 ;;
+            --ddns-interval) interval="$2"; shift 2 ;;
+            --block-check-url) block_url="$2"; block_enabled="true"; shift 2 ;;
+            --block-check-keyword) block_keyword="$2"; block_enabled="true"; shift 2 ;;
+            --block-check-timeout) block_timeout="$2"; block_enabled="true"; shift 2 ;;
+            --block-check-threshold) block_threshold="$2"; block_enabled="true"; shift 2 ;;
+            --change-ip-curl) change_cmd="$2"; block_enabled="true"; shift 2 ;;
+            --change-ip-wait) change_wait="$2"; shift 2 ;;
+            --change-ip-cooldown) change_cooldown="$2"; shift 2 ;;
+            -h|--help)
+                echo "用法: v2node ddns-set --cf-token TOKEN --cf-zone-id ZONE --cf-record DOMAIN [--block-check-url URL --change-ip-curl CMD]"
+                return 0 ;;
+            *)
+                echo -e "${red}未知 DDNS 参数: $1${plain}"
+                return 1 ;;
+        esac
+    done
+
+    cf_record_type=$(echo "${cf_record_type:-A}" | tr '[:lower:]' '[:upper:]')
+    [[ "$cf_record_type" != "A" && "$cf_record_type" != "AAAA" ]] && cf_record_type="A"
+    [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
+    interval=$(normalize_minutes "${interval:-5}")
+    [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
+    [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
+    [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
+    [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
+    if [[ "$cf_proxied" =~ ^([Tt][Rr][Uu][Ee]|1|[Yy]|[Yy][Ee][Ss])$ ]]; then
+        cf_proxied=true
+    else
+        cf_proxied=false
+    fi
+
+    if [[ -z "$cf_token" || -z "$cf_zone_id" || -z "$cf_record_name" ]]; then
+        echo -e "${red}缺少 --cf-token / --cf-zone-id / --cf-record${plain}"
+        return 1
+    fi
+    if [[ "$block_enabled" == "true" && -z "$block_url" ]]; then
+        echo -e "${red}启用墙检测时必须提供 --block-check-url${plain}"
+        return 1
+    fi
+
+    ensure_ddns_dependencies
+    write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
+        "$interval" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
+        "$change_cmd" "$change_wait" "$change_cooldown"
+
+    install_ddns_monitor_script || return 1
+    install_ddns_timer || return 1
+    echo -e "${green}DDNS/墙检测配置已写入 /etc/v2node/ddns.env${plain}"
+    /usr/local/v2node/v2node-ddns run || true
+}
+
 run_ddns_once() {
     if [[ ! -x /usr/local/v2node/v2node-ddns ]]; then
         install_ddns_monitor_script || return 1
@@ -814,6 +890,7 @@ show_usage() {
     echo "v2node x25519       - 生成 x25519 密钥"
     echo "v2node generate     - 生成 v2node 配置文件"
     echo "v2node ddns         - 配置 Cloudflare DDNS/墙检测自动换IP"
+    echo "v2node ddns-set     - 使用命令行参数配置 DDNS/墙检测"
     echo "v2node ddns-run     - 立即执行一次 DDNS/墙检测"
     echo "v2node ddns-status  - 查看 DDNS/墙检测状态"
     echo "v2node ddns-disable - 停用 DDNS/墙检测定时任务"
@@ -899,6 +976,7 @@ if [[ $# > 0 ]]; then
         "config") config $* ;;
         "generate") generate_config_file ;;
         "ddns") check_install 0 && configure_ddns_monitor $2 ;;
+        "ddns-set") check_install 0 && configure_ddns_monitor_from_args "${@:2}" ;;
         "ddns-run") check_install 0 && run_ddns_once $2 ;;
         "ddns-status") show_ddns_status $2 ;;
         "ddns-disable") disable_ddns_monitor $2 ;;

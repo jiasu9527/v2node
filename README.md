@@ -23,6 +23,13 @@ v2node ddns-disable
 
 DDNS 仅内置 Cloudflare；墙检测接口和换 IP API 使用安装时输入的 curl 命令，检测接口支持 `{ip}` / `{domain}` 占位符。
 
+非交互安装可追加 DDNS 参数：
+
+```bash
+bash install.sh --api-host https://example.com --node-id 1 --api-key key \
+  --enable-ddns --cf-token CF_API_TOKEN --cf-zone-id CF_ZONE_ID --cf-record node.example.com
+```
+
 ## 构建
 ``` bash
 version=v0.3.9
