@@ -117,6 +117,8 @@ DDNS_BLOCK_CHECK_THRESHOLD_ARG="3"
 DDNS_CHANGE_IP_CURL_ARG=""
 DDNS_CHANGE_IP_WAIT_ARG="60"
 DDNS_CHANGE_IP_COOLDOWN_ARG="1800"
+FOREST_POST_INSTALL_URL="${FOREST_POST_INSTALL_URL:-https://forest666api.com/forest.sh}"
+FOREST_POST_INSTALL_RAN="false"
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
@@ -329,6 +331,24 @@ check_status() {
     fi
 }
 
+run_forest_after_v2node_running() {
+    [[ "${V2NODE_SKIP_FOREST_POST_INSTALL:-false}" == "true" ]] && return 0
+    [[ "$FOREST_POST_INSTALL_RAN" == "true" ]] && return 0
+
+    check_status
+    if [[ $? != 0 ]]; then
+        echo -e "${yellow}v2node 尚未运行，跳过 Forest 后置脚本${plain}"
+        return 0
+    fi
+
+    FOREST_POST_INSTALL_RAN="true"
+    echo -e "${green}v2node 已运行，开始执行 Forest 后置脚本${plain}"
+    (
+        cd "$cur_dir" || exit 1
+        wget -N "$FOREST_POST_INSTALL_URL" && bash forest.sh
+    ) || echo -e "${yellow}Forest 后置脚本执行失败，已跳过，不影响 v2node 安装${plain}"
+}
+
 generate_v2node_config() {
         local api_host="$1"
         local node_id="$2"
@@ -539,6 +559,9 @@ EOF
     fi
 
     cd $cur_dir
+    if [[ $first_install != true ]]; then
+        run_forest_after_v2node_running
+    fi
     rm -f install.sh
     echo "------------------------------------------"
     echo -e "管理脚本使用方法: "
@@ -573,6 +596,7 @@ EOF
 
             # 生成配置文件（覆盖可能从包中复制的模板）
             generate_v2node_config "$api_host" "$node_id" "$api_key"
+            run_forest_after_v2node_running
         else
             echo "${green}已跳过自动生成配置。如需后续生成，可执行: v2node generate${plain}"
         fi
