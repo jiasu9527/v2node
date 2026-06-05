@@ -52,6 +52,8 @@ load_config() {
     : "${BLOCK_CHECK_ENABLED:=false}"
     : "${BLOCK_CHECK_TIMEOUT:=10}"
     : "${BLOCK_CHECK_FAIL_THRESHOLD:=3}"
+    : "${CF_RETRY_ATTEMPTS:=5}"
+    : "${CF_RETRY_DELAY:=3}"
     : "${CHANGE_IP_WAIT_SECONDS:=60}"
     : "${CHANGE_IP_COOLDOWN_SECONDS:=1800}"
 
@@ -72,6 +74,8 @@ load_config() {
     fi
     [[ "$BLOCK_CHECK_TIMEOUT" =~ ^[0-9]+$ ]] || BLOCK_CHECK_TIMEOUT=10
     [[ "$BLOCK_CHECK_FAIL_THRESHOLD" =~ ^[0-9]+$ ]] || BLOCK_CHECK_FAIL_THRESHOLD=3
+    [[ "$CF_RETRY_ATTEMPTS" =~ ^[0-9]+$ ]] || CF_RETRY_ATTEMPTS=5
+    [[ "$CF_RETRY_DELAY" =~ ^[0-9]+$ ]] || CF_RETRY_DELAY=3
     [[ "$CHANGE_IP_WAIT_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_WAIT_SECONDS=60
     [[ "$CHANGE_IP_COOLDOWN_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_COOLDOWN_SECONDS=1800
 }
@@ -138,10 +142,67 @@ get_public_ip() {
 }
 
 cf_headers() {
-    curl -fsS \
+    curl -sS --connect-timeout 10 --max-time 30 \
         -H "Authorization: Bearer ${CF_API_TOKEN}" \
         -H "Content-Type: application/json" \
         "$@"
+}
+
+cf_errors() {
+    local response="$1"
+    echo "$response" | jq -c '.errors // []' 2>/dev/null || echo "${response:0:300}"
+}
+
+cf_success() {
+    local response="$1"
+    [[ "$(echo "$response" | jq -r '.success // false' 2>/dev/null)" == "true" ]]
+}
+
+cf_retryable_response() {
+    local response="$1"
+    if ! echo "$response" | jq -e . >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "$response" | jq -e '
+        (.errors // [])
+        | map(
+            (.code | tostring) as $code
+            | (.message // "") as $message
+            | ($code == "7003"
+                or $code == "10000"
+                or ($message | test("route|not found|404"; "i")))
+        )
+        | any
+    ' >/dev/null 2>&1
+}
+
+cf_write_record() {
+    local action="$1"
+    local method="$2"
+    local url="$3"
+    local payload="$4"
+    local response attempt max delay
+
+    max="${CF_RETRY_ATTEMPTS:-5}"
+    delay="${CF_RETRY_DELAY:-3}"
+    (( max < 1 )) && max=1
+
+    for ((attempt = 1; attempt <= max; attempt++)); do
+        response="$(cf_headers -X "$method" "$url" --data "$payload")" || response=""
+        if cf_success "$response"; then
+            echo "$response"
+            return 0
+        fi
+
+        if (( attempt < max )) && cf_retryable_response "$response"; then
+            log "Cloudflare ${action} DNS 记录临时失败，${delay}s 后重试(${attempt}/${max}): $(cf_errors "$response")"
+            sleep "$delay"
+            continue
+        fi
+
+        echo "$response"
+        return 0
+    done
 }
 
 cf_ensure_zone_id() {
@@ -201,6 +262,11 @@ cf_upsert_record() {
     local proxied payload response success record_id old_ip
 
     proxied="$(normalize_bool "${CF_PROXIED}")"
+    # cf_get_record is usually called through command substitution. Resolve the
+    # Zone ID in the current shell first, otherwise an auto-detected CF_ZONE_ID
+    # would be lost in the command-substitution subshell and create/update URLs
+    # would become /zones//dns_records, which Cloudflare returns as 404.
+    cf_ensure_zone_id || return 1
     response="$(cf_get_record)" || {
         log "Cloudflare 查询 DNS 记录失败"
         return 1
@@ -228,19 +294,13 @@ cf_upsert_record() {
         '{type:$type,name:$name,content:$content,ttl:$ttl,proxied:$proxied}')"
 
     if [[ -n "$record_id" ]]; then
-        response="$(cf_headers -X PUT \
+        response="$(cf_write_record "更新" "PUT" \
             "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records/${record_id}" \
-            --data "$payload")" || {
-            log "Cloudflare 更新 DNS 记录失败"
-            return 1
-        }
+            "$payload")"
     else
-        response="$(cf_headers -X POST \
+        response="$(cf_write_record "创建" "POST" \
             "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records" \
-            --data "$payload")" || {
-            log "Cloudflare 创建 DNS 记录失败"
-            return 1
-        }
+            "$payload")"
     fi
 
     success="$(echo "$response" | jq -r '.success // false')"
