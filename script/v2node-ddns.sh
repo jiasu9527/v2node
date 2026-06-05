@@ -12,7 +12,7 @@ LOG_FILE="${V2NODE_DDNS_LOG:-/var/log/v2node-ddns.log}"
 log() {
     local message="$*"
     mkdir -p "$(dirname "$LOG_FILE")" >/dev/null 2>&1 || true
-    printf '%s %s\n' "$(date '+%F %T')" "$message" | tee -a "$LOG_FILE"
+    printf '%s %s\n' "$(date '+%F %T')" "$message" | tee -a "$LOG_FILE" >&2
 }
 
 fail() {
