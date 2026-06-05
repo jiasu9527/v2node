@@ -678,7 +678,7 @@ configure_ddns_monitor() {
     ensure_ddns_dependencies
 
     echo -e "${yellow}Cloudflare DDNS/墙检测自动换IP配置${plain}"
-    echo "说明：DDNS 使用 Cloudflare API；墙检测默认访问 https://www.baidu.com/。"
+    echo "说明：DDNS 使用 Cloudflare API；墙检测默认访问 https://baidu.com/。"
     echo "检测接口支持占位符：{ip} 当前公网IP，{domain} DNS记录名。"
     echo ""
 
@@ -724,8 +724,8 @@ configure_ddns_monitor() {
     read -rp "是否启用被墙检测自动换IP？[y/N]: " block_input
     if [[ "$block_input" =~ ^[Yy]$ ]]; then
         block_enabled=true
-        read -rp "墙检测接口URL[默认 https://www.baidu.com/，支持 {ip}/{domain}]: " block_url
-        block_url=${block_url:-https://www.baidu.com/}
+        read -rp "墙检测接口URL[默认 https://baidu.com/，支持 {ip}/{domain}]: " block_url
+        block_url=${block_url:-https://baidu.com/}
         read -rp "返回内容包含哪个关键词表示已被墙[留空=接口curl失败才算异常]: " block_keyword
         read -rp "检测超时时间秒[默认10]: " block_timeout
         block_timeout=${block_timeout:-10}
@@ -841,7 +841,7 @@ configure_ddns_monitor_from_args() {
         fi
     fi
     if [[ "$block_enabled" == "true" && -z "$block_url" ]]; then
-        block_url="https://www.baidu.com/"
+        block_url="https://baidu.com/"
     fi
 
     if [[ "$ddns_enabled" != "true" && "$block_enabled" != "true" ]]; then

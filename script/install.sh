@@ -162,7 +162,7 @@ parse_args() {
             -h|--help)
                 echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
                 echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
-                echo "墙检测可选参数: --block-check-url URL(默认https://www.baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
+                echo "墙检测可选参数: --block-check-url URL(默认https://baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
                 exit 0 ;;
             --*)
                 echo "未知参数: $1"; exit 1 ;;
