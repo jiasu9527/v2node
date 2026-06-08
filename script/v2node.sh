@@ -719,7 +719,7 @@ configure_ddns_monitor() {
     fi
 
     read -rp "检查间隔分钟[默认1，最大59]: " interval
-    interval=$(normalize_minutes "${interval:-5}")
+    interval=$(normalize_minutes "${interval:-1}")
 
     read -rp "是否启用被墙检测自动换IP？[y/N]: " block_input
     if [[ "$block_input" =~ ^[Yy]$ ]]; then
@@ -775,6 +775,186 @@ configure_ddns_monitor() {
     fi
 }
 
+bool_value() {
+    case "$(echo "${1:-false}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|y|on) echo "true" ;;
+        *) echo "false" ;;
+    esac
+}
+
+configure_cloudflare_ddns() {
+    ensure_ddns_dependencies
+
+    local ddns_enabled=true
+    local block_enabled=false
+    local cf_token=""
+    local cf_zone_id=""
+    local cf_record_name=""
+    local cf_record_type="A"
+    local cf_ttl=1
+    local cf_proxied=false
+    local interval=1
+    local block_url=""
+    local block_keyword=""
+    local block_timeout=10
+    local block_threshold=3
+    local change_cmd=""
+    local change_wait=60
+    local change_cooldown=1800
+
+    if [[ -f /etc/v2node/ddns.env ]]; then
+        # shellcheck source=/dev/null
+        . /etc/v2node/ddns.env
+        cf_token="${CF_API_TOKEN:-}"
+        cf_zone_id="${CF_ZONE_ID:-}"
+        cf_record_name="${CF_RECORD_NAME:-}"
+        cf_record_type="${CF_RECORD_TYPE:-A}"
+        cf_ttl="${CF_TTL:-1}"
+        cf_proxied="$(bool_value "${CF_PROXIED:-false}")"
+        interval="${CHECK_INTERVAL_MINUTES:-1}"
+        block_enabled="$(bool_value "${BLOCK_CHECK_ENABLED:-false}")"
+        block_url="${BLOCK_CHECK_URL:-}"
+        block_keyword="${BLOCK_CHECK_BLOCKED_KEYWORD:-}"
+        block_timeout="${BLOCK_CHECK_TIMEOUT:-10}"
+        block_threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
+        change_cmd="${CHANGE_IP_CURL_CMD:-}"
+        change_wait="${CHANGE_IP_WAIT_SECONDS:-60}"
+        change_cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
+    fi
+
+    echo -e "${yellow}Cloudflare DDNS 配置${plain}"
+    echo "留空表示沿用已有值；首次配置时 Cloudflare API Token 和 DNS记录名不能为空。"
+    echo ""
+
+    local input
+    read -rsp "Cloudflare API Token${cf_token:+[留空沿用已有]}: " input
+    echo ""
+    [[ -n "$input" ]] && cf_token="$input"
+    read -rp "Cloudflare Zone ID[可留空自动识别]: " input
+    [[ -n "$input" ]] && cf_zone_id="$input"
+    read -rp "DNS记录完整域名${cf_record_name:+[当前: $cf_record_name]}: " input
+    [[ -n "$input" ]] && cf_record_name="$input"
+    read -rp "记录类型[A/AAAA，默认${cf_record_type}]: " input
+    [[ -n "$input" ]] && cf_record_type="$input"
+    cf_record_type=$(echo "${cf_record_type:-A}" | tr '[:lower:]' '[:upper:]')
+    [[ "$cf_record_type" != "A" && "$cf_record_type" != "AAAA" ]] && cf_record_type="A"
+    read -rp "TTL[默认${cf_ttl}，1=自动]: " input
+    [[ -n "$input" ]] && cf_ttl="$input"
+    [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
+    read -rp "是否开启Cloudflare代理橙云？[y/N，当前${cf_proxied}]: " input
+    if [[ "$input" =~ ^[Yy]$ ]]; then
+        cf_proxied=true
+    elif [[ "$input" =~ ^[Nn]$ ]]; then
+        cf_proxied=false
+    fi
+    read -rp "检查间隔分钟[默认${interval}，最大59]: " input
+    [[ -n "$input" ]] && interval="$input"
+    interval=$(normalize_minutes "${interval:-1}")
+
+    if [[ -z "$cf_token" || -z "$cf_record_name" ]]; then
+        echo -e "${red}Cloudflare API Token / DNS记录名不能为空${plain}"
+        if [[ $# == 0 ]]; then
+            before_show_menu
+        fi
+        return 1
+    fi
+
+    write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
+        "$interval" "$ddns_enabled" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
+        "$change_cmd" "$change_wait" "$change_cooldown"
+
+    install_ddns_monitor_script || return 1
+    install_ddns_timer || return 1
+    echo -e "${green}Cloudflare DDNS 配置已写入 /etc/v2node/ddns.env${plain}"
+    /usr/local/v2node/v2node-ddns run || true
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
+configure_block_check() {
+    ensure_ddns_dependencies
+
+    local ddns_enabled=false
+    local block_enabled=true
+    local cf_token=""
+    local cf_zone_id=""
+    local cf_record_name=""
+    local cf_record_type="A"
+    local cf_ttl=1
+    local cf_proxied=false
+    local interval=1
+    local block_url="https://baidu.com/"
+    local block_keyword=""
+    local block_timeout=10
+    local block_threshold=3
+    local change_cmd=""
+    local change_wait=60
+    local change_cooldown=1800
+
+    if [[ -f /etc/v2node/ddns.env ]]; then
+        # shellcheck source=/dev/null
+        . /etc/v2node/ddns.env
+        ddns_enabled="$(bool_value "${DDNS_UPDATE_ENABLED:-false}")"
+        cf_token="${CF_API_TOKEN:-}"
+        cf_zone_id="${CF_ZONE_ID:-}"
+        cf_record_name="${CF_RECORD_NAME:-}"
+        cf_record_type="${CF_RECORD_TYPE:-A}"
+        cf_ttl="${CF_TTL:-1}"
+        cf_proxied="$(bool_value "${CF_PROXIED:-false}")"
+        interval="${CHECK_INTERVAL_MINUTES:-1}"
+        block_url="${BLOCK_CHECK_URL:-https://baidu.com/}"
+        block_keyword="${BLOCK_CHECK_BLOCKED_KEYWORD:-}"
+        block_timeout="${BLOCK_CHECK_TIMEOUT:-10}"
+        block_threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
+        change_cmd="${CHANGE_IP_CURL_CMD:-}"
+        change_wait="${CHANGE_IP_WAIT_SECONDS:-60}"
+        change_cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
+    fi
+
+    echo -e "${yellow}被墙检测 / 自动换 IP 配置${plain}"
+    echo "默认访问 https://baidu.com/，curl 失败就累计一次异常。"
+    echo ""
+
+    local input
+    read -rp "检查间隔分钟[默认${interval}，最大59]: " input
+    [[ -n "$input" ]] && interval="$input"
+    interval=$(normalize_minutes "${interval:-1}")
+    read -rp "墙检测接口URL[默认${block_url}，支持 {ip}/{domain}]: " input
+    [[ -n "$input" ]] && block_url="$input"
+    block_url=${block_url:-https://baidu.com/}
+    read -rp "返回内容包含哪个关键词表示已被墙[留空=接口curl失败才算异常]${block_keyword:+[当前: $block_keyword]}: " input
+    [[ -n "$input" ]] && block_keyword="$input"
+    read -rp "检测超时时间秒[默认${block_timeout}]: " input
+    [[ -n "$input" ]] && block_timeout="$input"
+    [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
+    read -rp "连续异常多少次后换IP[默认${block_threshold}]: " input
+    [[ -n "$input" ]] && block_threshold="$input"
+    [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
+    read -rp "换IP curl完整命令${change_cmd:+[留空沿用已有]}: " input
+    [[ -n "$input" ]] && change_cmd="$input"
+    read -rp "换IP后等待秒数[默认${change_wait}]: " input
+    [[ -n "$input" ]] && change_wait="$input"
+    [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
+    read -rp "换IP冷却秒数[默认${change_cooldown}]: " input
+    [[ -n "$input" ]] && change_cooldown="$input"
+    [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
+
+    write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
+        "$interval" "$ddns_enabled" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
+        "$change_cmd" "$change_wait" "$change_cooldown"
+
+    install_ddns_monitor_script || return 1
+    install_ddns_timer || return 1
+    echo -e "${green}被墙检测配置已写入 /etc/v2node/ddns.env${plain}"
+    /usr/local/v2node/v2node-ddns run || true
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
 configure_ddns_monitor_from_args() {
     local cf_token=""
     local cf_zone_id=""
@@ -823,7 +1003,7 @@ configure_ddns_monitor_from_args() {
     cf_record_type=$(echo "${cf_record_type:-A}" | tr '[:lower:]' '[:upper:]')
     [[ "$cf_record_type" != "A" && "$cf_record_type" != "AAAA" ]] && cf_record_type="A"
     [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
-    interval=$(normalize_minutes "${interval:-5}")
+    interval=$(normalize_minutes "${interval:-1}")
     [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
     [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
     [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
@@ -921,7 +1101,9 @@ show_usage() {
     echo "v2node log          - 查看 v2node 日志"
     echo "v2node x25519       - 生成 x25519 密钥"
     echo "v2node generate     - 生成 v2node 配置文件"
-    echo "v2node ddns         - 配置 Cloudflare DDNS/墙检测自动换IP"
+    echo "v2node ddns         - 配置 Cloudflare DDNS"
+    echo "v2node block-check  - 配置被墙检测/自动换IP"
+    echo "v2node ddns-all     - 配置 Cloudflare DDNS/墙检测自动换IP"
     echo "v2node ddns-set     - 使用命令行参数配置 DDNS/墙检测"
     echo "v2node ddns-run     - 立即执行一次 DDNS/墙检测"
     echo "v2node ddns-status  - 查看 DDNS/墙检测状态"
@@ -958,16 +1140,17 @@ show_menu() {
   ${green}13.${plain} 生成 v2node 配置文件
   ${green}14.${plain} 放行 VPS 的所有网络端口
 ————————————————
-  ${green}15.${plain} 配置 Cloudflare DDNS/墙检测自动换IP
-  ${green}16.${plain} 立即执行一次 DDNS/墙检测
-  ${green}17.${plain} 查看 DDNS/墙检测状态
-  ${green}18.${plain} 停用 DDNS/墙检测
+  ${green}15.${plain} 配置 Cloudflare DDNS
+  ${green}16.${plain} 配置被墙检测/自动换IP
+  ${green}17.${plain} 立即执行一次 DDNS/墙检测
+  ${green}18.${plain} 查看 DDNS/墙检测状态
+  ${green}19.${plain} 停用 DDNS/墙检测
 ————————————————
-  ${green}19.${plain} 退出脚本
+  ${green}20.${plain} 退出脚本
  "
  #后续更新可加入上方字符串中
     show_status
-    echo && read -rp "请输入选择 [0-19]: " num
+    echo && read -rp "请输入选择 [0-20]: " num
 
     case "${num}" in
         0) config ;;
@@ -985,12 +1168,13 @@ show_menu() {
         12) update_shell ;;
         13) generate_config_file ;;
         14) open_ports ;;
-        15) check_install && configure_ddns_monitor ;;
-        16) check_install && run_ddns_once ;;
-        17) show_ddns_status ;;
-        18) disable_ddns_monitor ;;
-        19) exit ;;
-        *) echo -e "${red}请输入正确的数字 [0-19]${plain}" ;;
+        15) check_install && configure_cloudflare_ddns ;;
+        16) check_install && configure_block_check ;;
+        17) check_install && run_ddns_once ;;
+        18) show_ddns_status ;;
+        19) disable_ddns_monitor ;;
+        20) exit ;;
+        *) echo -e "${red}请输入正确的数字 [0-20]${plain}" ;;
     esac
 }
 
@@ -1007,7 +1191,9 @@ if [[ $# > 0 ]]; then
         "update") check_install 0 && update 0 $2 ;;
         "config") config $* ;;
         "generate") generate_config_file ;;
-        "ddns") check_install 0 && configure_ddns_monitor $2 ;;
+        "ddns") check_install 0 && configure_cloudflare_ddns $2 ;;
+        "block-check") check_install 0 && configure_block_check $2 ;;
+        "ddns-all") check_install 0 && configure_ddns_monitor $2 ;;
         "ddns-set") check_install 0 && configure_ddns_monitor_from_args "${@:2}" ;;
         "ddns-run") check_install 0 && run_ddns_once $2 ;;
         "ddns-status") show_ddns_status $2 ;;

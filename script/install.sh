@@ -575,7 +575,8 @@ EOF
     echo "v2node disable      - 取消 v2node 开机自启"
     echo "v2node log          - 查看 v2node 日志"
     echo "v2node generate     - 生成 v2node 配置文件"
-    echo "v2node ddns         - 配置 Cloudflare DDNS/墙检测自动换IP"
+    echo "v2node ddns         - 配置 Cloudflare DDNS"
+    echo "v2node block-check  - 配置被墙检测/自动换IP"
     echo "v2node update       - 更新 v2node"
     echo "v2node update x.x.x - 更新 v2node 指定版本"
     echo "v2node install      - 安装 v2node"
@@ -602,11 +603,17 @@ EOF
         fi
 
         if [[ -t 0 ]]; then
-            read -rp "是否配置 Cloudflare DDNS/墙检测自动换IP？(y/n): " if_ddns
+            read -rp "是否配置 Cloudflare DDNS？(y/n): " if_ddns
             if [[ "$if_ddns" =~ ^[Yy]$ ]]; then
                 /usr/bin/v2node ddns 0 || true
             else
-                echo "${green}已跳过 DDNS/墙检测配置。如需后续生成，可执行: v2node ddns${plain}"
+                echo "${green}已跳过 DDNS 配置。如需后续生成，可执行: v2node ddns${plain}"
+            fi
+            read -rp "是否配置被墙检测/自动换IP？(y/n): " if_block_check
+            if [[ "$if_block_check" =~ ^[Yy]$ ]]; then
+                /usr/bin/v2node block-check 0 || true
+            else
+                echo "${green}已跳过被墙检测配置。如需后续生成，可执行: v2node block-check${plain}"
             fi
         fi
     fi

@@ -12,13 +12,14 @@ A v2board backend base on moddified xray-core.
 curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/jiasu9527/v2node/main/script/install.sh?ts=$(date +%s)" -o install.sh && bash install.sh
 ```
 
-安装完成后可在首次安装提示里配置 Cloudflare DDNS/墙检测自动换 IP，也可以后续执行：
+安装完成后可在首次安装提示里分别配置 Cloudflare DDNS 和被墙检测/自动换 IP，也可以后续执行：
 
 ```bash
-v2node ddns
-v2node ddns-status
-v2node ddns-run
-v2node ddns-disable
+v2node ddns          # 配置 Cloudflare DDNS
+v2node block-check   # 配置被墙检测/自动换 IP
+v2node ddns-status   # 查看状态
+v2node ddns-run      # 立即执行一次
+v2node ddns-disable  # 停用定时任务
 ```
 
 DDNS 仅内置 Cloudflare；墙检测默认访问 `https://www.baidu.com/`，检测失败即计为异常；也可自定义检测接口，支持 `{ip}` / `{domain}` 占位符。
