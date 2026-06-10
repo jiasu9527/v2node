@@ -9,10 +9,64 @@ STATE_FILE="${STATE_DIR}/ddns.state"
 LOCK_DIR="${V2NODE_DDNS_LOCK_DIR:-/run/v2node-ddns.lock}"
 LOG_FILE="${V2NODE_DDNS_LOG:-/var/log/v2node-ddns.log}"
 
+red=$'\033[0;31m'
+green=$'\033[0;32m'
+yellow=$'\033[0;33m'
+blue=$'\033[0;34m'
+cyan=$'\033[0;36m'
+bold=$'\033[1m'
+dim=$'\033[2m'
+plain=$'\033[0m'
+
 log() {
     local message="$*"
     mkdir -p "$(dirname "$LOG_FILE")" >/dev/null 2>&1 || true
     printf '%s %s\n' "$(date '+%F %T')" "$message" | tee -a "$LOG_FILE" >&2
+}
+
+color_enabled() {
+    [[ -z "${NO_COLOR:-}" ]] && { [[ -t 2 ]] || [[ "${V2NODE_FORCE_COLOR:-}" == "1" ]]; }
+}
+
+pretty_line() {
+    local color="$1"
+    shift
+    local message="$*"
+    local ts
+    ts="$(date '+%F %T')"
+    mkdir -p "$(dirname "$LOG_FILE")" >/dev/null 2>&1 || true
+    printf '%s %s\n' "$ts" "$message" >> "$LOG_FILE"
+    if color_enabled; then
+        printf '%b%s%b %b%s%b\n' "$dim" "$ts" "$plain" "$color" "$message" "$plain" >&2
+    else
+        printf '%s %s\n' "$ts" "$message" >&2
+    fi
+}
+
+pretty_title() {
+    pretty_line "${bold}${cyan}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    pretty_line "${bold}${cyan}" "🧱 被墙检测 / 自动换 IP"
+    pretty_line "${bold}${cyan}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+pretty_kv() {
+    pretty_line "$blue" "  $1: $2"
+}
+
+pretty_info() {
+    pretty_line "$cyan" "ℹ️  $*"
+}
+
+pretty_success() {
+    pretty_line "$green" "✅ $*"
+}
+
+pretty_warn() {
+    pretty_line "$yellow" "⚠️  $*"
+}
+
+pretty_error() {
+    pretty_line "$red" "❌ $*"
 }
 
 fail() {
@@ -347,6 +401,7 @@ render_check_url() {
 check_blocked() {
     local ip="$1"
     local enabled url response keyword
+    LAST_BLOCK_REASON=""
 
     enabled="$(normalize_bool "${BLOCK_CHECK_ENABLED}")"
     [[ "$enabled" == "true" ]] || return 1
@@ -355,36 +410,60 @@ check_blocked() {
     url="$(render_check_url "$ip")"
     response="$(curl -fsS --max-time "${BLOCK_CHECK_TIMEOUT}" "$url" 2>&1)"
     if [[ $? -ne 0 ]]; then
-        log "墙检测接口请求失败，计为异常: ${url} -> ${response}"
+        LAST_BLOCK_REASON="接口请求失败: ${response}"
+        if [[ "${PRETTY_BLOCK_CHECK:-false}" != "true" ]]; then
+            log "墙检测接口请求失败，计为异常: ${url} -> ${response}"
+        fi
         return 0
     fi
 
     keyword="${BLOCK_CHECK_BLOCKED_KEYWORD:-}"
     if [[ -n "$keyword" ]]; then
         if grep -Fq "$keyword" <<< "$response"; then
-            log "墙检测命中关键词: ${keyword}"
+            LAST_BLOCK_REASON="响应内容命中关键词: ${keyword}"
+            if [[ "${PRETTY_BLOCK_CHECK:-false}" != "true" ]]; then
+                log "墙检测命中关键词: ${keyword}"
+            fi
             return 0
         fi
+        LAST_BLOCK_REASON="接口正常返回，未命中关键词: ${keyword}"
         return 1
     fi
 
+    LAST_BLOCK_REASON="接口正常返回"
     return 1
 }
 
 run_change_ip_command() {
     [[ -n "${CHANGE_IP_CURL_CMD:-}" ]] || {
-        log "未配置换 IP curl 命令，跳过自动换 IP"
+        if [[ "${PRETTY_BLOCK_CHECK:-false}" == "true" ]]; then
+            pretty_warn "未配置换 IP curl 命令，跳过自动换 IP"
+        else
+            log "未配置换 IP curl 命令，跳过自动换 IP"
+        fi
         return 1
     }
 
-    log "开始执行换 IP curl 命令"
+    if [[ "${PRETTY_BLOCK_CHECK:-false}" == "true" ]]; then
+        pretty_info "开始执行换 IP curl 命令"
+    else
+        log "开始执行换 IP curl 命令"
+    fi
     bash -c "$CHANGE_IP_CURL_CMD" >> "$LOG_FILE" 2>&1
     local code=$?
     if [[ $code -ne 0 ]]; then
-        log "换 IP curl 命令执行失败，退出码: ${code}"
+        if [[ "${PRETTY_BLOCK_CHECK:-false}" == "true" ]]; then
+            pretty_error "换 IP curl 命令执行失败，退出码: ${code}"
+        else
+            log "换 IP curl 命令执行失败，退出码: ${code}"
+        fi
         return $code
     fi
-    log "换 IP curl 命令执行完成，等待 ${CHANGE_IP_WAIT_SECONDS}s 后继续"
+    if [[ "${PRETTY_BLOCK_CHECK:-false}" == "true" ]]; then
+        pretty_success "换 IP curl 命令执行完成，等待 ${CHANGE_IP_WAIT_SECONDS}s 后继续"
+    else
+        log "换 IP curl 命令执行完成，等待 ${CHANGE_IP_WAIT_SECONDS}s 后继续"
+    fi
     sleep "${CHANGE_IP_WAIT_SECONDS}"
 }
 
@@ -418,40 +497,68 @@ run_once_mode() {
     LAST_IP="$ip"
 
     if [[ "$mode" == "block-check-only" ]]; then
+        PRETTY_BLOCK_CHECK=true
         check_url="$(render_check_url "$ip")"
-        log "被墙检测开始"
-        log "当前公网 IP: ${ip}"
-        log "检测接口: ${check_url}"
-        log "检测阈值: 连续异常 ${BLOCK_CHECK_FAIL_THRESHOLD:-1} 次触发换 IP；换 IP 等待 ${CHANGE_IP_WAIT_SECONDS:-0}s；冷却 ${CHANGE_IP_COOLDOWN_SECONDS:-0}s"
-        log "仅执行被墙检测：跳过本次初始 DDNS 更新"
+        pretty_title
+        pretty_kv "当前公网 IP" "${ip}"
+        pretty_kv "检测接口" "${check_url}"
+        pretty_kv "触发规则" "连续异常 ${BLOCK_CHECK_FAIL_THRESHOLD:-1} 次换 IP"
+        pretty_kv "换 IP 等待" "${CHANGE_IP_WAIT_SECONDS:-0}s"
+        pretty_kv "换 IP 冷却" "${CHANGE_IP_COOLDOWN_SECONDS:-0}s"
+        pretty_info "仅执行被墙检测，跳过本次初始 DDNS 更新"
     elif [[ "$ddns_enabled" == "true" ]]; then
         cf_upsert_record "$ip" || fail "Cloudflare DDNS 更新失败"
     fi
 
     if [[ "$block_enabled" == "true" ]]; then
         if check_blocked "$ip"; then
-            log "被墙检测结果: 异常/疑似被墙"
+            if [[ "$mode" == "block-check-only" ]]; then
+                pretty_warn "检测结果: 异常/疑似被墙"
+                pretty_kv "失败原因" "${LAST_BLOCK_REASON:-未知}"
+            else
+                log "被墙检测结果: 异常/疑似被墙"
+            fi
             FAIL_COUNT=$((FAIL_COUNT + 1))
             threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-1}"
             cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-0}"
             now="$(date +%s)"
-            log "墙检测异常次数: ${FAIL_COUNT}/${threshold}"
+            if [[ "$mode" == "block-check-only" ]]; then
+                pretty_kv "异常次数" "${FAIL_COUNT}/${threshold}"
+            else
+                log "墙检测异常次数: ${FAIL_COUNT}/${threshold}"
+            fi
 
             if (( FAIL_COUNT >= threshold )); then
                 if (( LAST_CHANGE_TS > 0 && now - LAST_CHANGE_TS < cooldown )); then
-                    log "仍在换 IP 冷却期，剩余 $((cooldown - (now - LAST_CHANGE_TS)))s"
+                    if [[ "$mode" == "block-check-only" ]]; then
+                        pretty_warn "仍在换 IP 冷却期，剩余 $((cooldown - (now - LAST_CHANGE_TS)))s"
+                    else
+                        log "仍在换 IP 冷却期，剩余 $((cooldown - (now - LAST_CHANGE_TS)))s"
+                    fi
                 else
                     old_ip="$ip"
-                    log "换 IP 前公网 IP: ${old_ip}"
+                    if [[ "$mode" == "block-check-only" ]]; then
+                        pretty_kv "换 IP 前公网 IP" "${old_ip}"
+                    else
+                        log "换 IP 前公网 IP: ${old_ip}"
+                    fi
                     if run_change_ip_command; then
                         LAST_CHANGE_TS="$(date +%s)"
                         FAIL_COUNT=0
                         new_ip="$(get_public_ip)" || fail "换 IP 后获取公网 IP 失败"
                         LAST_IP="$new_ip"
                         if [[ "$new_ip" == "$old_ip" ]]; then
-                            log "换 IP 后公网 IP 未变化: ${new_ip}"
+                            if [[ "$mode" == "block-check-only" ]]; then
+                                pretty_warn "换 IP 后公网 IP 未变化: ${new_ip}"
+                            else
+                                log "换 IP 后公网 IP 未变化: ${new_ip}"
+                            fi
                         else
-                            log "换 IP 后公网 IP 已变化: ${old_ip} -> ${new_ip}"
+                            if [[ "$mode" == "block-check-only" ]]; then
+                                pretty_success "换 IP 后公网 IP 已变化: ${old_ip} -> ${new_ip}"
+                            else
+                                log "换 IP 后公网 IP 已变化: ${old_ip} -> ${new_ip}"
+                            fi
                         fi
                         ip="$new_ip"
                         if [[ "$ddns_enabled" == "true" ]]; then
@@ -460,20 +567,29 @@ run_once_mode() {
                     fi
                 fi
             else
-                log "未达到换 IP 阈值，暂不执行换 IP"
+                if [[ "$mode" == "block-check-only" ]]; then
+                    pretty_info "未达到换 IP 阈值，暂不执行换 IP"
+                else
+                    log "未达到换 IP 阈值，暂不执行换 IP"
+                fi
             fi
         else
             if [[ "$mode" == "block-check-only" ]]; then
-                log "被墙检测结果: 正常，未触发换 IP"
+                pretty_success "检测结果: 正常，未触发换 IP"
+                pretty_kv "结果说明" "${LAST_BLOCK_REASON:-接口正常返回}"
             fi
             if (( FAIL_COUNT > 0 )); then
-                log "墙检测恢复正常，清零异常计数"
+                if [[ "$mode" == "block-check-only" ]]; then
+                    pretty_info "墙检测恢复正常，清零异常计数"
+                else
+                    log "墙检测恢复正常，清零异常计数"
+                fi
             fi
             FAIL_COUNT=0
         fi
     else
         if [[ "$mode" == "block-check-only" ]]; then
-            log "被墙检测未启用，请先执行 v2node block-check 配置"
+            pretty_warn "被墙检测未启用，请先执行 v2node block-check 配置"
         fi
         FAIL_COUNT=0
     fi
