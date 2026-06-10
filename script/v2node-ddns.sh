@@ -411,13 +411,18 @@ run_once_mode() {
     require_cmd curl jq
     load_state
 
-    local ip now threshold cooldown ddns_enabled block_enabled
+    local ip old_ip new_ip now threshold cooldown ddns_enabled block_enabled check_url
     ddns_enabled="$(normalize_bool "${DDNS_UPDATE_ENABLED}")"
     block_enabled="$(normalize_bool "${BLOCK_CHECK_ENABLED}")"
     ip="$(get_public_ip)" || fail "获取当前公网 IP 失败"
     LAST_IP="$ip"
 
     if [[ "$mode" == "block-check-only" ]]; then
+        check_url="$(render_check_url "$ip")"
+        log "被墙检测开始"
+        log "当前公网 IP: ${ip}"
+        log "检测接口: ${check_url}"
+        log "检测阈值: 连续异常 ${BLOCK_CHECK_FAIL_THRESHOLD:-1} 次触发换 IP；换 IP 等待 ${CHANGE_IP_WAIT_SECONDS:-0}s；冷却 ${CHANGE_IP_COOLDOWN_SECONDS:-0}s"
         log "仅执行被墙检测：跳过本次初始 DDNS 更新"
     elif [[ "$ddns_enabled" == "true" ]]; then
         cf_upsert_record "$ip" || fail "Cloudflare DDNS 更新失败"
@@ -425,6 +430,7 @@ run_once_mode() {
 
     if [[ "$block_enabled" == "true" ]]; then
         if check_blocked "$ip"; then
+            log "被墙检测结果: 异常/疑似被墙"
             FAIL_COUNT=$((FAIL_COUNT + 1))
             threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-1}"
             cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-0}"
@@ -435,24 +441,40 @@ run_once_mode() {
                 if (( LAST_CHANGE_TS > 0 && now - LAST_CHANGE_TS < cooldown )); then
                     log "仍在换 IP 冷却期，剩余 $((cooldown - (now - LAST_CHANGE_TS)))s"
                 else
+                    old_ip="$ip"
+                    log "换 IP 前公网 IP: ${old_ip}"
                     if run_change_ip_command; then
                         LAST_CHANGE_TS="$(date +%s)"
                         FAIL_COUNT=0
-                        ip="$(get_public_ip)" || fail "换 IP 后获取公网 IP 失败"
-                        LAST_IP="$ip"
+                        new_ip="$(get_public_ip)" || fail "换 IP 后获取公网 IP 失败"
+                        LAST_IP="$new_ip"
+                        if [[ "$new_ip" == "$old_ip" ]]; then
+                            log "换 IP 后公网 IP 未变化: ${new_ip}"
+                        else
+                            log "换 IP 后公网 IP 已变化: ${old_ip} -> ${new_ip}"
+                        fi
+                        ip="$new_ip"
                         if [[ "$ddns_enabled" == "true" ]]; then
                             cf_upsert_record "$ip" || fail "换 IP 后 Cloudflare DDNS 更新失败"
                         fi
                     fi
                 fi
+            else
+                log "未达到换 IP 阈值，暂不执行换 IP"
             fi
         else
+            if [[ "$mode" == "block-check-only" ]]; then
+                log "被墙检测结果: 正常，未触发换 IP"
+            fi
             if (( FAIL_COUNT > 0 )); then
                 log "墙检测恢复正常，清零异常计数"
             fi
             FAIL_COUNT=0
         fi
     else
+        if [[ "$mode" == "block-check-only" ]]; then
+            log "被墙检测未启用，请先执行 v2node block-check 配置"
+        fi
         FAIL_COUNT=0
     fi
 
