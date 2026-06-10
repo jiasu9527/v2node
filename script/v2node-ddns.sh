@@ -24,6 +24,8 @@ usage() {
     cat <<EOF
 v2node-ddns usage:
   v2node-ddns run       执行一次 DDNS 更新和/或墙检测
+  v2node-ddns block-check-run
+                         仅执行被墙检测/自动换 IP，跳过初始 DDNS 更新
   v2node-ddns status    查看配置摘要和最近状态
   v2node-ddns help      显示帮助
 
@@ -395,6 +397,15 @@ with_lock() {
 }
 
 run_once() {
+    run_once_mode "all"
+}
+
+run_block_check_once() {
+    run_once_mode "block-check-only"
+}
+
+run_once_mode() {
+    local mode="${1:-all}"
     with_lock
     load_config || fail "DDNS 配置不完整，请运行 v2node ddns 重新配置"
     require_cmd curl jq
@@ -406,7 +417,9 @@ run_once() {
     ip="$(get_public_ip)" || fail "获取当前公网 IP 失败"
     LAST_IP="$ip"
 
-    if [[ "$ddns_enabled" == "true" ]]; then
+    if [[ "$mode" == "block-check-only" ]]; then
+        log "仅执行被墙检测：跳过本次初始 DDNS 更新"
+    elif [[ "$ddns_enabled" == "true" ]]; then
         cf_upsert_record "$ip" || fail "Cloudflare DDNS 更新失败"
     fi
 
@@ -486,6 +499,7 @@ show_status() {
 
 case "${1:-run}" in
     run) run_once ;;
+    block-check-run) run_block_check_once ;;
     status) show_status ;;
     help|-h|--help) usage ;;
     *) usage; exit 1 ;;

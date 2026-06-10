@@ -1088,6 +1088,16 @@ run_ddns_once() {
     fi
 }
 
+run_block_check_once() {
+    if [[ ! -x /usr/local/v2node/v2node-ddns ]]; then
+        install_ddns_monitor_script || return 1
+    fi
+    /usr/local/v2node/v2node-ddns block-check-run
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
 show_ddns_status() {
     if [[ ! -x /usr/local/v2node/v2node-ddns ]]; then
         install_ddns_monitor_script >/dev/null 2>&1 || true
@@ -1144,6 +1154,7 @@ show_usage() {
     echo "v2node ddns-all     - 配置 Cloudflare DDNS/墙检测自动换IP"
     echo "v2node ddns-set     - 使用命令行参数配置 DDNS/墙检测"
     echo "v2node ddns-run     - 立即执行一次 DDNS/墙检测"
+    echo "v2node block-check-run - 只执行一次被墙检测/自动换IP"
     echo "v2node ddns-status  - 查看 DDNS/墙检测状态"
     echo "v2node ddns-disable - 停用 DDNS/墙检测定时任务"
     echo "v2node update       - 更新 v2node"
@@ -1181,14 +1192,15 @@ show_menu() {
   ${green}15.${plain} 配置 Cloudflare DDNS
   ${green}16.${plain} 配置被墙检测/自动换IP
   ${green}17.${plain} 立即执行一次 DDNS/墙检测
-  ${green}18.${plain} 查看 DDNS/墙检测状态
-  ${green}19.${plain} 停用 DDNS/墙检测
+  ${green}18.${plain} 只执行一次被墙检测/自动换IP
+  ${green}19.${plain} 查看 DDNS/墙检测状态
+  ${green}20.${plain} 停用 DDNS/墙检测
 ————————————————
-  ${green}20.${plain} 退出脚本
+  ${green}21.${plain} 退出脚本
  "
  #后续更新可加入上方字符串中
     show_status
-    echo && read -rp "请输入选择 [0-20]: " num
+    echo && read -rp "请输入选择 [0-21]: " num
 
     case "${num}" in
         0) config ;;
@@ -1209,10 +1221,11 @@ show_menu() {
         15) check_install && configure_cloudflare_ddns ;;
         16) check_install && configure_block_check ;;
         17) check_install && run_ddns_once ;;
-        18) show_ddns_status ;;
-        19) disable_ddns_monitor ;;
-        20) exit ;;
-        *) echo -e "${red}请输入正确的数字 [0-20]${plain}" ;;
+        18) check_install && run_block_check_once ;;
+        19) show_ddns_status ;;
+        20) disable_ddns_monitor ;;
+        21) exit ;;
+        *) echo -e "${red}请输入正确的数字 [0-21]${plain}" ;;
     esac
 }
 
@@ -1234,6 +1247,7 @@ if [[ $# > 0 ]]; then
         "ddns-all") check_install 0 && configure_ddns_monitor $2 ;;
         "ddns-set") check_install 0 && configure_ddns_monitor_from_args "${@:2}" ;;
         "ddns-run") check_install 0 && run_ddns_once $2 ;;
+        "block-check-run") check_install 0 && run_block_check_once $2 ;;
         "ddns-status") show_ddns_status $2 ;;
         "ddns-disable") disable_ddns_monitor $2 ;;
         "install") check_uninstall 0 && install 0 ;;

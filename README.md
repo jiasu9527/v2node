@@ -18,7 +18,8 @@ curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/jiasu
 v2node ddns          # 配置 Cloudflare DDNS
 v2node block-check   # 配置被墙检测/自动换 IP
 v2node ddns-status   # 查看状态
-v2node ddns-run      # 立即执行一次
+v2node ddns-run      # 立即执行一次 DDNS/墙检测
+v2node block-check-run # 只执行一次被墙检测/自动换 IP
 v2node ddns-disable  # 停用定时任务
 ```
 
