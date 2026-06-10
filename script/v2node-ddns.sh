@@ -51,11 +51,11 @@ load_config() {
     : "${DDNS_UPDATE_ENABLED:=false}"
     : "${BLOCK_CHECK_ENABLED:=false}"
     : "${BLOCK_CHECK_TIMEOUT:=10}"
-    : "${BLOCK_CHECK_FAIL_THRESHOLD:=3}"
+    : "${BLOCK_CHECK_FAIL_THRESHOLD:=1}"
     : "${CF_RETRY_ATTEMPTS:=5}"
     : "${CF_RETRY_DELAY:=3}"
-    : "${CHANGE_IP_WAIT_SECONDS:=60}"
-    : "${CHANGE_IP_COOLDOWN_SECONDS:=1800}"
+    : "${CHANGE_IP_WAIT_SECONDS:=0}"
+    : "${CHANGE_IP_COOLDOWN_SECONDS:=0}"
 
     CF_RECORD_TYPE="$(echo "$CF_RECORD_TYPE" | tr '[:lower:]' '[:upper:]')"
     if [[ "$CF_RECORD_TYPE" != "A" && "$CF_RECORD_TYPE" != "AAAA" ]]; then
@@ -73,11 +73,11 @@ load_config() {
         [[ -n "${CF_RECORD_NAME:-}" ]] || return 1
     fi
     [[ "$BLOCK_CHECK_TIMEOUT" =~ ^[0-9]+$ ]] || BLOCK_CHECK_TIMEOUT=10
-    [[ "$BLOCK_CHECK_FAIL_THRESHOLD" =~ ^[0-9]+$ ]] || BLOCK_CHECK_FAIL_THRESHOLD=3
+    [[ "$BLOCK_CHECK_FAIL_THRESHOLD" =~ ^[0-9]+$ ]] || BLOCK_CHECK_FAIL_THRESHOLD=1
     [[ "$CF_RETRY_ATTEMPTS" =~ ^[0-9]+$ ]] || CF_RETRY_ATTEMPTS=5
     [[ "$CF_RETRY_DELAY" =~ ^[0-9]+$ ]] || CF_RETRY_DELAY=3
-    [[ "$CHANGE_IP_WAIT_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_WAIT_SECONDS=60
-    [[ "$CHANGE_IP_COOLDOWN_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_COOLDOWN_SECONDS=1800
+    [[ "$CHANGE_IP_WAIT_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_WAIT_SECONDS=0
+    [[ "$CHANGE_IP_COOLDOWN_SECONDS" =~ ^[0-9]+$ ]] || CHANGE_IP_COOLDOWN_SECONDS=0
 }
 
 require_cmd() {
@@ -413,8 +413,8 @@ run_once() {
     if [[ "$block_enabled" == "true" ]]; then
         if check_blocked "$ip"; then
             FAIL_COUNT=$((FAIL_COUNT + 1))
-            threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
-            cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
+            threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-1}"
+            cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-0}"
             now="$(date +%s)"
             log "墙检测异常次数: ${FAIL_COUNT}/${threshold}"
 
@@ -478,7 +478,7 @@ show_status() {
     if [[ -n "${BLOCK_CHECK_URL:-}" ]]; then
         echo "墙检测接口: ${BLOCK_CHECK_URL}"
     fi
-    echo "异常计数: ${FAIL_COUNT:-0}/${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
+    echo "异常计数: ${FAIL_COUNT:-0}/${BLOCK_CHECK_FAIL_THRESHOLD:-1}"
     echo "最近 IP: ${LAST_IP:-}"
     echo "最近换 IP 时间戳: ${LAST_CHANGE_TS:-0}"
     echo "日志: ${LOG_FILE}"

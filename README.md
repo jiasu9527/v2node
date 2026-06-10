@@ -22,8 +22,8 @@ v2node ddns-run      # 立即执行一次
 v2node ddns-disable  # 停用定时任务
 ```
 
-DDNS 仅内置 Cloudflare；墙检测默认访问 `https://www.baidu.com/`，检测失败即计为异常；也可自定义检测接口，支持 `{ip}` / `{domain}` 占位符。
-默认每 1 分钟检查一次，只有 IP 变化时才更新 Cloudflare 解析。
+DDNS 仅内置 Cloudflare；墙检测默认访问 `https://baidu.com/`，检测失败即计为异常；也可自定义检测接口，支持 `{ip}` / `{domain}` 占位符。
+默认每 1 分钟检查一次；默认 1 次异常就执行换 IP curl，换 IP 等待和冷却均为 0，只有 IP 变化时才更新 Cloudflare 解析。
 
 非交互安装可追加 DDNS 参数：
 

@@ -56,6 +56,43 @@ install_ddns_monitor_script() {
     echo -e "${green}已安装 DDNS/墙检测脚本：${target}${plain}"
 }
 
+migrate_ddns_no_cooldown_config() {
+    local file="/etc/v2node/ddns.env"
+    [[ -f "$file" ]] || return 0
+
+    local changed=false
+    set_env_value() {
+        local key="$1"
+        local value="$2"
+        if grep -q "^${key}=" "$file"; then
+            sed -i "s#^${key}=.*#${key}=${value}#" "$file"
+        else
+            printf '%s=%s\n' "$key" "$value" >> "$file"
+        fi
+        changed=true
+    }
+
+    replace_default_value() {
+        local key="$1"
+        local old_value="$2"
+        local new_value="$3"
+        if grep -Eq "^${key}=${old_value}$" "$file"; then
+            set_env_value "$key" "$new_value"
+        fi
+    }
+
+    if grep -Eq "^BLOCK_CHECK_URL=['\"]?https://www\\.baidu\\.com/?['\"]?$" "$file"; then
+        set_env_value "BLOCK_CHECK_URL" "'https://baidu.com/'"
+    fi
+    replace_default_value "BLOCK_CHECK_FAIL_THRESHOLD" "3" "1"
+    replace_default_value "CHANGE_IP_WAIT_SECONDS" "60" "0"
+    replace_default_value "CHANGE_IP_COOLDOWN_SECONDS" "1800" "0"
+
+    if [[ "$changed" == "true" ]]; then
+        echo -e "${green}已迁移墙检测配置：一次异常即换 IP，且不设置冷却${plain}"
+    fi
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -367,6 +404,7 @@ update_shell() {
     else
         chmod +x /usr/bin/v2node
         if [[ -f /etc/v2node/ddns.env ]]; then
+            migrate_ddns_no_cooldown_config || true
             install_ddns_monitor_script || true
         fi
         echo -e "${green}升级脚本成功，请重新运行脚本${plain}" && exit 0
@@ -694,10 +732,10 @@ configure_ddns_monitor() {
     local block_url=""
     local block_keyword=""
     local block_timeout=10
-    local block_threshold=3
+    local block_threshold=1
     local change_cmd=""
-    local change_wait=60
-    local change_cooldown=1800
+    local change_wait=0
+    local change_cooldown=0
 
     read -rp "是否启用 DDNS 解析更新？[y/N]: " ddns_input
     if [[ "$ddns_input" =~ ^[Yy]$ ]]; then
@@ -730,16 +768,16 @@ configure_ddns_monitor() {
         read -rp "检测超时时间秒[默认10]: " block_timeout
         block_timeout=${block_timeout:-10}
         [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
-        read -rp "连续异常多少次后换IP[默认3]: " block_threshold
-        block_threshold=${block_threshold:-3}
-        [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
+        read -rp "连续异常多少次后换IP[默认1]: " block_threshold
+        block_threshold=${block_threshold:-1}
+        [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=1
         read -rp "换IP curl完整命令(例如 curl -fsS 'https://api.xxx/change?token=xxx'): " change_cmd
-        read -rp "换IP后等待秒数[默认60]: " change_wait
-        change_wait=${change_wait:-60}
-        [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
-        read -rp "换IP冷却秒数[默认1800]: " change_cooldown
-        change_cooldown=${change_cooldown:-1800}
-        [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
+        read -rp "换IP后等待秒数[默认0]: " change_wait
+        change_wait=${change_wait:-0}
+        [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=0
+        read -rp "换IP冷却秒数[默认0]: " change_cooldown
+        change_cooldown=${change_cooldown:-0}
+        [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=0
     fi
 
     if [[ "$ddns_enabled" != "true" && "$block_enabled" != "true" ]]; then
@@ -797,10 +835,10 @@ configure_cloudflare_ddns() {
     local block_url=""
     local block_keyword=""
     local block_timeout=10
-    local block_threshold=3
+    local block_threshold=1
     local change_cmd=""
-    local change_wait=60
-    local change_cooldown=1800
+    local change_wait=0
+    local change_cooldown=0
 
     if [[ -f /etc/v2node/ddns.env ]]; then
         # shellcheck source=/dev/null
@@ -816,10 +854,10 @@ configure_cloudflare_ddns() {
         block_url="${BLOCK_CHECK_URL:-}"
         block_keyword="${BLOCK_CHECK_BLOCKED_KEYWORD:-}"
         block_timeout="${BLOCK_CHECK_TIMEOUT:-10}"
-        block_threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
+        block_threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-1}"
         change_cmd="${CHANGE_IP_CURL_CMD:-}"
-        change_wait="${CHANGE_IP_WAIT_SECONDS:-60}"
-        change_cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
+        change_wait="${CHANGE_IP_WAIT_SECONDS:-0}"
+        change_cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-0}"
     fi
 
     echo -e "${yellow}Cloudflare DDNS 配置${plain}"
@@ -888,10 +926,10 @@ configure_block_check() {
     local block_url="https://baidu.com/"
     local block_keyword=""
     local block_timeout=10
-    local block_threshold=3
+    local block_threshold=1
     local change_cmd=""
-    local change_wait=60
-    local change_cooldown=1800
+    local change_wait=0
+    local change_cooldown=0
 
     if [[ -f /etc/v2node/ddns.env ]]; then
         # shellcheck source=/dev/null
@@ -907,10 +945,10 @@ configure_block_check() {
         block_url="${BLOCK_CHECK_URL:-https://baidu.com/}"
         block_keyword="${BLOCK_CHECK_BLOCKED_KEYWORD:-}"
         block_timeout="${BLOCK_CHECK_TIMEOUT:-10}"
-        block_threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-3}"
+        block_threshold="${BLOCK_CHECK_FAIL_THRESHOLD:-1}"
         change_cmd="${CHANGE_IP_CURL_CMD:-}"
-        change_wait="${CHANGE_IP_WAIT_SECONDS:-60}"
-        change_cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-1800}"
+        change_wait="${CHANGE_IP_WAIT_SECONDS:-0}"
+        change_cooldown="${CHANGE_IP_COOLDOWN_SECONDS:-0}"
     fi
 
     echo -e "${yellow}被墙检测 / 自动换 IP 配置${plain}"
@@ -931,15 +969,15 @@ configure_block_check() {
     [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
     read -rp "连续异常多少次后换IP[默认${block_threshold}]: " input
     [[ -n "$input" ]] && block_threshold="$input"
-    [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
+    [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=1
     read -rp "换IP curl完整命令${change_cmd:+[留空沿用已有]}: " input
     [[ -n "$input" ]] && change_cmd="$input"
     read -rp "换IP后等待秒数[默认${change_wait}]: " input
     [[ -n "$input" ]] && change_wait="$input"
-    [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
+    [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=0
     read -rp "换IP冷却秒数[默认${change_cooldown}]: " input
     [[ -n "$input" ]] && change_cooldown="$input"
-    [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
+    [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=0
 
     write_ddns_config "$cf_token" "$cf_zone_id" "$cf_record_name" "$cf_record_type" "$cf_ttl" "$cf_proxied" \
         "$interval" "$ddns_enabled" "$block_enabled" "$block_url" "$block_keyword" "$block_timeout" "$block_threshold" \
@@ -966,10 +1004,10 @@ configure_ddns_monitor_from_args() {
     local block_url=""
     local block_keyword=""
     local block_timeout="10"
-    local block_threshold="3"
+    local block_threshold="1"
     local change_cmd=""
-    local change_wait="60"
-    local change_cooldown="1800"
+    local change_wait="0"
+    local change_cooldown="0"
     local ddns_enabled="false"
     local block_enabled="false"
 
@@ -1005,9 +1043,9 @@ configure_ddns_monitor_from_args() {
     [[ "$cf_ttl" =~ ^[0-9]+$ ]] || cf_ttl=1
     interval=$(normalize_minutes "${interval:-1}")
     [[ "$block_timeout" =~ ^[0-9]+$ ]] || block_timeout=10
-    [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=3
-    [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=60
-    [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=1800
+    [[ "$block_threshold" =~ ^[0-9]+$ ]] || block_threshold=1
+    [[ "$change_wait" =~ ^[0-9]+$ ]] || change_wait=0
+    [[ "$change_cooldown" =~ ^[0-9]+$ ]] || change_cooldown=0
     if [[ "$cf_proxied" =~ ^([Tt][Rr][Uu][Ee]|1|[Yy]|[Yy][Ee][Ss])$ ]]; then
         cf_proxied=true
     else

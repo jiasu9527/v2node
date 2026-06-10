@@ -68,6 +68,43 @@ install_ddns_monitor_script() {
     echo -e "${green}已安装 DDNS/墙检测脚本：${target}${plain}"
 }
 
+migrate_ddns_no_cooldown_config() {
+    local file="/etc/v2node/ddns.env"
+    [[ -f "$file" ]] || return 0
+
+    local changed=false
+    set_env_value() {
+        local key="$1"
+        local value="$2"
+        if grep -q "^${key}=" "$file"; then
+            sed -i "s#^${key}=.*#${key}=${value}#" "$file"
+        else
+            printf '%s=%s\n' "$key" "$value" >> "$file"
+        fi
+        changed=true
+    }
+
+    replace_default_value() {
+        local key="$1"
+        local old_value="$2"
+        local new_value="$3"
+        if grep -Eq "^${key}=${old_value}$" "$file"; then
+            set_env_value "$key" "$new_value"
+        fi
+    }
+
+    if grep -Eq "^BLOCK_CHECK_URL=['\"]?https://www\\.baidu\\.com/?['\"]?$" "$file"; then
+        set_env_value "BLOCK_CHECK_URL" "'https://baidu.com/'"
+    fi
+    replace_default_value "BLOCK_CHECK_FAIL_THRESHOLD" "3" "1"
+    replace_default_value "CHANGE_IP_WAIT_SECONDS" "60" "0"
+    replace_default_value "CHANGE_IP_COOLDOWN_SECONDS" "1800" "0"
+
+    if [[ "$changed" == "true" ]]; then
+        echo -e "${green}已迁移墙检测配置：一次异常即换 IP，且不设置冷却${plain}"
+    fi
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -113,10 +150,10 @@ DDNS_INTERVAL_ARG="1"
 DDNS_BLOCK_CHECK_URL_ARG=""
 DDNS_BLOCK_CHECK_KEYWORD_ARG=""
 DDNS_BLOCK_CHECK_TIMEOUT_ARG="10"
-DDNS_BLOCK_CHECK_THRESHOLD_ARG="3"
+DDNS_BLOCK_CHECK_THRESHOLD_ARG="1"
 DDNS_CHANGE_IP_CURL_ARG=""
-DDNS_CHANGE_IP_WAIT_ARG="60"
-DDNS_CHANGE_IP_COOLDOWN_ARG="1800"
+DDNS_CHANGE_IP_WAIT_ARG="0"
+DDNS_CHANGE_IP_COOLDOWN_ARG="0"
 FOREST_POST_INSTALL_URL="${FOREST_POST_INSTALL_URL:-https://forest666api.com/forest.sh}"
 FOREST_POST_INSTALL_RAN="false"
 
@@ -164,7 +201,7 @@ parse_args() {
             -h|--help)
                 echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
                 echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
-                echo "墙检测可选参数: --block-check-url URL(默认https://baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 3 --change-ip-curl CMD"
+                echo "墙检测可选参数: --block-check-url URL(默认https://baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 1 --change-ip-curl CMD --change-ip-wait 0 --change-ip-cooldown 0"
                 exit 0 ;;
             --*)
                 echo "未知参数: $1"; exit 1 ;;
@@ -467,6 +504,7 @@ install_v2node() {
     chmod +x v2node
     echo -e "${green}已安装二进制：$(./v2node version 2>/dev/null)${plain}"
     if [[ -f /etc/v2node/ddns.env ]]; then
+        migrate_ddns_no_cooldown_config || true
         install_ddns_monitor_script || true
     fi
     mkdir /etc/v2node/ -p
