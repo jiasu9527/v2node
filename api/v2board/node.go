@@ -32,12 +32,13 @@ type NodeInfo struct {
 }
 
 type CommonNode struct {
-	Protocol    string      `json:"protocol"`
-	ListenIP    string      `json:"listen_ip"`
-	SendThrough string      `json:"send_through,omitempty"`
-	ServerPort  int         `json:"server_port"`
-	Routes      []Route     `json:"routes"`
-	BaseConfig  *BaseConfig `json:"base_config"`
+	Protocol       string                `json:"protocol"`
+	ListenIP       string                `json:"listen_ip"`
+	SendThrough    string                `json:"send_through,omitempty"`
+	ServerPort     int                   `json:"server_port"`
+	Routes         []Route               `json:"routes"`
+	BaseConfig     *BaseConfig           `json:"base_config"`
+	SensitiveAudit *SensitiveAuditConfig `json:"sensitive_audit"`
 	//vless vmess trojan
 	Tls                int         `json:"tls"`
 	TlsSettings        TlsSettings `json:"tls_settings"`
@@ -76,6 +77,24 @@ type BaseConfig struct {
 	PullInterval           any `json:"pull_interval"`
 	DeviceOnlineMinTraffic int `json:"device_online_min_traffic"`
 	NodeReportMinTraffic   int `json:"node_report_min_traffic"`
+}
+
+type SensitiveAuditConfig struct {
+	Enable         bool     `json:"enable"`
+	Rules          []string `json:"rules"`
+	ReportInterval any      `json:"report_interval"`
+	LogClientIP    bool     `json:"log_client_ip"`
+}
+
+func (c *SensitiveAuditConfig) ReportIntervalDuration() time.Duration {
+	if c == nil {
+		return time.Minute
+	}
+	d := intervalToTime(c.ReportInterval)
+	if d <= 0 {
+		return time.Minute
+	}
+	return d
 }
 
 type TlsSettings struct {

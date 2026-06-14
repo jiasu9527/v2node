@@ -85,6 +85,28 @@ func (c *Controller) reportOnlineUsersTask(ctx context.Context) (err error) {
 	return nil
 }
 
+func (c *Controller) reportSensitiveAccessTask(ctx context.Context) (err error) {
+	if c.info == nil || c.info.Common == nil || c.info.Common.SensitiveAudit == nil || !c.info.Common.SensitiveAudit.Enable {
+		return nil
+	}
+	events := c.server.GetSensitiveAccessSlice(c.tag)
+	if len(events) == 0 {
+		return nil
+	}
+	if err = c.apiClient.ReportSensitiveAccess(ctx, events); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Report sensitive access failed")
+		return nil
+	}
+	log.WithField("tag", c.tag).Infof("Report %d sensitive access events", len(events))
+	return nil
+}
+
 func buildActiveUIDSet(userTraffic []panel.UserTraffic) map[int]struct{} {
 	if len(userTraffic) == 0 {
 		return nil

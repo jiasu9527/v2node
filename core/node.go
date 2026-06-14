@@ -15,10 +15,12 @@ func (v *V2Core) AddNode(tag string, info *panel.NodeInfo) error {
 	if err != nil {
 		return fmt.Errorf("add inbound error: %s", err)
 	}
+	v.configureSensitiveAudit(tag, info)
 	return nil
 }
 
 func (v *V2Core) DelNode(tag string) error {
+	v.disableSensitiveAudit(tag)
 	err := v.removeInbound(tag)
 	if err != nil {
 		return fmt.Errorf("remove in error: %s", err)

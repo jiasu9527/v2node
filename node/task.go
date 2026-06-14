@@ -39,6 +39,16 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	_ = c.userReportPeriodic.Start(false)
 	log.WithField("tag", c.tag).Info("Start report online users")
 	_ = c.onlineReportPeriodic.Start(false)
+	if node.Common != nil && node.Common.SensitiveAudit != nil && node.Common.SensitiveAudit.Enable {
+		c.sensitiveReportPeriodic = &task.Task{
+			Name:     "reportSensitiveAccessTask",
+			Interval: node.Common.SensitiveAudit.ReportIntervalDuration(),
+			Execute:  c.reportSensitiveAccessTask,
+			ReloadCh: c.server.ReloadCh,
+		}
+		log.WithField("tag", c.tag).Info("Start report sensitive access")
+		_ = c.sensitiveReportPeriodic.Start(false)
+	}
 	if node.Security == panel.Tls {
 		switch c.info.Common.CertInfo.CertMode {
 		case "none", "", "file", "self":

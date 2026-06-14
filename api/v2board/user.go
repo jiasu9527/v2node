@@ -169,3 +169,35 @@ func (c *Client) ReportNodeOnlineUsers(ctx context.Context, data *map[int][]stri
 	}
 	return nil
 }
+
+type SensitiveAccessEvent struct {
+	UserID   int    `json:"user_id"`
+	Domain   string `json:"domain"`
+	Rule     string `json:"rule"`
+	ClientIP string `json:"client_ip,omitempty"`
+	Count    int64  `json:"count"`
+	FirstAt  int64  `json:"first_at"`
+	LastAt   int64  `json:"last_at"`
+}
+
+func (c *Client) ReportSensitiveAccess(ctx context.Context, events []SensitiveAccessEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	const path = "/api/v1/server/UniProxy/sensitive"
+	r, err := c.client.R().
+		SetContext(ctx).
+		SetBody(events).
+		ForceContentType("application/json").
+		Post(path)
+	if err != nil {
+		return err
+	}
+	if r == nil {
+		return fmt.Errorf("report sensitive access failed: received nil response")
+	}
+	if r.IsError() {
+		return fmt.Errorf("report sensitive access failed: status %d", r.StatusCode())
+	}
+	return nil
+}

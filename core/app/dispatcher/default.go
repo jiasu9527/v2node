@@ -100,13 +100,15 @@ func (r *cachedReader) Interrupt() {
 
 // DefaultDispatcher is a default implementation of Dispatcher.
 type DefaultDispatcher struct {
-	ohm          outbound.Manager
-	router       routing.Router
-	policy       policy.Manager
-	stats        stats.Manager
-	fdns         dns.FakeDNSEngine
-	Counter      sync.Map
-	LinkManagers sync.Map // map[string]*LinkManager
+	ohm             outbound.Manager
+	router          routing.Router
+	policy          policy.Manager
+	stats           stats.Manager
+	fdns            dns.FakeDNSEngine
+	Counter         sync.Map
+	LinkManagers    sync.Map // map[string]*LinkManager
+	SensitiveAudits sync.Map
+	SensitiveEvents sync.Map
 }
 
 func init() {
@@ -304,6 +306,9 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 			result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
 			if err == nil {
 				content.Protocol = result.Protocol()
+				if domain := result.Domain(); domain != "" {
+					d.RecordSensitiveAccessFromContext(ctx, domain)
+				}
 			}
 			if err == nil && d.shouldOverride(ctx, result, sniffingRequest, destination) {
 				domain := result.Domain()
@@ -424,6 +429,9 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 		result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
 		if err == nil {
 			content.Protocol = result.Protocol()
+			if domain := result.Domain(); domain != "" {
+				d.RecordSensitiveAccessFromContext(ctx, domain)
+			}
 		}
 		if err == nil && d.shouldOverride(ctx, result, sniffingRequest, destination) {
 			domain := result.Domain()
