@@ -63,14 +63,18 @@ func RenderMieruConfig(node *panel.NodeInfo, users []panel.UserInfo) ([]byte, er
 			"password": user.Uuid,
 		})
 	}
+	portBinding := map[string]any{
+		"port":     node.Common.ServerPort,
+		"protocol": transport,
+	}
+	if node.Common.Multiplexing != "" {
+		portBinding["multiplexing"] = node.Common.Multiplexing
+	}
 	cfg := map[string]any{
-		"portBindings": []map[string]any{{
-			"port":         node.Common.ServerPort,
-			"protocol":     transport,
-			"mtu":          mtu,
-			"multiplexing": node.Common.Multiplexing,
-		}},
-		"users": userList,
+		"portBindings": []map[string]any{portBinding},
+		"users":        userList,
+		"mtu":          mtu,
+		"loggingLevel": "INFO",
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
@@ -91,7 +95,7 @@ func NewExternalProcess(node *panel.NodeInfo, users []panel.UserInfo) (*External
 	case "mieru":
 		raw, err = RenderMieruConfig(node, users)
 		process.Command = "mita"
-		process.Args = []string{"run", "-c"}
+		process.Args = []string{"apply", "config"}
 	default:
 		return nil, fmt.Errorf("unsupported external protocol: %s", protocol)
 	}
@@ -114,6 +118,12 @@ func (p *ExternalProcess) Start() error {
 	if p == nil {
 		return fmt.Errorf("nil external process")
 	}
+	if p.Protocol == "mieru" {
+		if err := exec.Command(p.Command, p.Args...).Run(); err != nil {
+			return err
+		}
+		return exec.Command(p.Command, "start").Run()
+	}
 	cmd := exec.Command(p.Command, p.Args...)
 	if err := cmd.Start(); err != nil {
 		return err
@@ -123,7 +133,13 @@ func (p *ExternalProcess) Start() error {
 }
 
 func (p *ExternalProcess) Stop() error {
-	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+	if p == nil {
+		return nil
+	}
+	if p.Protocol == "mieru" {
+		return exec.Command(p.Command, "stop").Run()
+	}
+	if p.cmd == nil || p.cmd.Process == nil {
 		return nil
 	}
 	return p.cmd.Process.Kill()
