@@ -100,6 +100,6 @@ func buildJuicityServerOptions(node *panel.NodeInfo, users []panel.UserInfo) (*j
 		Fwmark:                fwmark,
 		SendThrough:           node.Common.SendThrough,
 		DisableOutboundUdp443: false,
-		Observer:              embeddedTrafficObserver{nodeID: node.Id},
+		Observer:              newEmbeddedTrafficObserver(node),
 	}, listen, nil
 }

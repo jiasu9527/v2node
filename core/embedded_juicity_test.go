@@ -128,7 +128,7 @@ func TestJuicityEmbeddedTrafficRegistryFeedsCollector(t *testing.T) {
 	node := &panel.NodeInfo{Id: 707, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity"}}
 	collector := NewExternalTrafficCollector(node)
 	users := []panel.UserInfo{{Id: 7001, Uuid: "11111111-1111-1111-1111-111111111111"}}
-	observer := embeddedTrafficObserver{nodeID: node.Id}
+	observer := newEmbeddedTrafficObserver(&panel.NodeInfo{Id: node.Id, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity", SensitiveAudit: &panel.SensitiveAuditConfig{Enable: true, Rules: []string{"domain:blocked.example"}, LogClientIP: true}}})
 
 	observer.AddTraffic(users[0].Uuid, 1000, 2000, "203.0.113.7")
 	got, err := collector.CollectTraffic(users, 0)
@@ -153,14 +153,14 @@ func TestJuicityEmbeddedAccessRegistryFeedsCollector(t *testing.T) {
 	node := &panel.NodeInfo{Id: 708, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity"}}
 	collector := NewExternalTrafficCollector(node)
 	users := []panel.UserInfo{{Id: 7002, Uuid: "22222222-2222-2222-2222-222222222222"}}
-	observer := embeddedTrafficObserver{nodeID: node.Id}
+	observer := newEmbeddedTrafficObserver(&panel.NodeInfo{Id: node.Id, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity", SensitiveAudit: &panel.SensitiveAuditConfig{Enable: true, Rules: []string{"domain:blocked.example"}, LogClientIP: true}}})
 
 	observer.AddAccess(users[0].Uuid, "blocked.example", "tcp", "203.0.113.8")
 	got, err := collector.CollectSensitiveAccess(users)
 	if err != nil {
 		t.Fatalf("CollectSensitiveAccess() error = %v", err)
 	}
-	if len(got) != 1 || got[0].UserID != 7002 || got[0].Domain != "blocked.example" || got[0].Rule != "embedded:tcp" || got[0].ClientIP != "203.0.113.8" {
+	if len(got) != 1 || got[0].UserID != 7002 || got[0].Domain != "blocked.example" || got[0].Rule != "domain:blocked.example" || got[0].ClientIP != "203.0.113.8" {
 		t.Fatalf("CollectSensitiveAccess() = %#v", got)
 	}
 	got, err = collector.CollectSensitiveAccess(users)

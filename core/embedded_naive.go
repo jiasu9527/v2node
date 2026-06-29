@@ -59,7 +59,7 @@ func (s *embeddedNaiveServer) Start(ctx context.Context) error {
 	s.cancel = cancel
 	s.listener = ln
 	userByName, uuidByPassword := buildNaiveAuthMaps(s.users)
-	observer := embeddedTrafficObserver{nodeID: s.node.Id}
+	observer := newEmbeddedTrafficObserver(s.node)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodConnect {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

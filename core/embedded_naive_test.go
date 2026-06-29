@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +50,7 @@ func TestEmbeddedNaiveConnectReportsTrafficAndAccess(t *testing.T) {
 
 	certFile, keyFile := writeSelfSignedCert(t)
 	port := unusedTCPPortForCore(t)
-	node := &panel.NodeInfo{Id: 901, Type: "naive", Common: &panel.CommonNode{Protocol: "naive", ServerPort: port, ListenIP: "127.0.0.1", TlsSettings: panel.TlsSettings{CertFile: certFile, KeyFile: keyFile}}}
+	node := &panel.NodeInfo{Id: 901, Type: "naive", Common: &panel.CommonNode{Protocol: "naive", ServerPort: port, ListenIP: "127.0.0.1", TlsSettings: panel.TlsSettings{CertFile: certFile, KeyFile: keyFile}, SensitiveAudit: &panel.SensitiveAuditConfig{Enable: true, Rules: []string{"domain:127.0.0.1"}, LogClientIP: true}}}
 	user := panel.UserInfo{Id: 9001, Uuid: "33333333-3333-3333-3333-333333333333"}
 	server, err := newEmbeddedNaiveServer(node, []panel.UserInfo{user})
 	if err != nil {
@@ -110,8 +109,36 @@ func TestEmbeddedNaiveConnectReportsTrafficAndAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectSensitiveAccess() error = %v", err)
 	}
-	if len(access) != 1 || access[0].UserID != user.Id || !strings.HasPrefix(access[0].Domain, "127.0.0.1") || access[0].Rule != "embedded:tcp" {
+	if len(access) != 1 || access[0].UserID != user.Id || access[0].Domain != "127.0.0.1" || access[0].Rule != "domain:127.0.0.1" || access[0].ClientIP != "127.0.0.1" {
 		t.Fatalf("CollectSensitiveAccess() = %#v, want target access", access)
+	}
+}
+
+func TestEmbeddedSensitiveObserverFiltersRules(t *testing.T) {
+	node := &panel.NodeInfo{Id: 902, Type: "naive", Common: &panel.CommonNode{Protocol: "naive", SensitiveAudit: &panel.SensitiveAuditConfig{Enable: true, Rules: []string{"domain:exact.example", "suffix:blocked.example", "keyword:danger"}, LogClientIP: false}}}
+	user := panel.UserInfo{Id: 9002, Uuid: "44444444-4444-4444-4444-444444444444"}
+	observer := newEmbeddedTrafficObserver(node)
+	observer.AddAccess(user.Uuid, "safe.example", "tcp", "203.0.113.9")
+	observer.AddAccess(user.Uuid, "api.blocked.example", "tcp", "203.0.113.9")
+	observer.AddAccess(user.Uuid, "danger-zone.example", "tcp", "203.0.113.9")
+
+	collector := NewExternalTrafficCollector(node)
+	access, err := collector.CollectSensitiveAccess([]panel.UserInfo{user})
+	if err != nil {
+		t.Fatalf("CollectSensitiveAccess() error = %v", err)
+	}
+	if len(access) != 2 {
+		t.Fatalf("CollectSensitiveAccess() len = %d, want 2: %#v", len(access), access)
+	}
+	byDomain := map[string]panel.SensitiveAccessEvent{}
+	for _, event := range access {
+		byDomain[event.Domain] = event
+		if event.ClientIP != "" {
+			t.Fatalf("ClientIP = %q, want hidden", event.ClientIP)
+		}
+	}
+	if byDomain["api.blocked.example"].Rule != "suffix:blocked.example" || byDomain["danger-zone.example"].Rule != "keyword:danger" {
+		t.Fatalf("events = %#v, want matched rules", access)
 	}
 }
 
