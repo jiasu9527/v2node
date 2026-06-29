@@ -1120,6 +1120,81 @@ show_ddns_status() {
 }
 
 
+
+show_external_status() {
+    local config_dir="${V2NODE_EXTERNAL_CONFIG_DIR:-/etc/v2node}"
+
+    echo -e "${yellow}Juicity/Mieru 外部协议状态${plain}"
+    echo "配置目录: ${config_dir}"
+    echo ""
+
+    echo "依赖命令:"
+    if command -v juicity-server >/dev/null 2>&1; then
+        echo -e "  juicity-server: ${green}$(command -v juicity-server)${plain}"
+    else
+        echo -e "  juicity-server: ${red}未安装/不在PATH${plain}"
+    fi
+    if command -v mita >/dev/null 2>&1; then
+        echo -e "  mita: ${green}$(command -v mita)${plain}"
+    else
+        echo -e "  mita: ${red}未安装/不在PATH${plain}"
+    fi
+    echo ""
+
+    echo "外部协议配置文件:"
+    shopt -s nullglob
+    local configs=("${config_dir}"/external-juicity-*.json "${config_dir}"/external-mieru-*.json)
+    shopt -u nullglob
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        echo -e "  ${yellow}未发现 external-juicity-*.json / external-mieru-*.json${plain}"
+    else
+        local cfg
+        for cfg in "${configs[@]}"; do
+            echo "  ${cfg}"
+            if [[ -r "$cfg" ]]; then
+                if command -v jq >/dev/null 2>&1; then
+                    jq -r 'if has("listen") then "    listen=" + (.listen|tostring) elif has("portBindings") then "    portBindings=" + (.portBindings|tostring) else "    未识别端口字段" end' "$cfg" 2>/dev/null || true
+                else
+                    grep -E '"listen"|"port"|"protocol"|"v2node_observer_log"|"observer_log"|"access_log"' "$cfg" | sed 's/^/    /' || true
+                fi
+            else
+                echo -e "    ${red}不可读${plain}"
+            fi
+        done
+    fi
+    echo ""
+
+    echo "外部协议进程:"
+    if pgrep -af "juicity-server|mita" >/dev/null 2>&1; then
+        pgrep -af "juicity-server|mita" | sed 's/^/  /'
+    else
+        echo -e "  ${yellow}未发现 juicity-server / mita 进程${plain}"
+    fi
+    echo ""
+
+    echo "监听端口(可能需要 root 权限显示进程名):"
+    if command -v ss >/dev/null 2>&1; then
+        ss -lntup 2>/dev/null | grep -E 'juicity|mita|v2node|LISTEN' || true
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -lntup 2>/dev/null | grep -E 'juicity|mita|v2node|LISTEN' || true
+    else
+        echo -e "  ${yellow}未安装 ss/netstat，无法查看监听端口${plain}"
+    fi
+    echo ""
+
+    if command -v mita >/dev/null 2>&1; then
+        echo "Mieru metrics 预览:"
+        mita get metrics 2>&1 | head -n 40 || true
+        echo ""
+    fi
+
+    show_observer_status 0
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
 show_observer_status() {
     local config_dir="${V2NODE_EXTERNAL_CONFIG_DIR:-/etc/v2node}"
     local found=false
@@ -1236,6 +1311,7 @@ show_usage() {
     echo "v2node ddns-status  - 查看 DDNS/墙检测状态"
     echo "v2node ddns-disable - 停用 DDNS/墙检测定时任务"
     echo "v2node observer-status - 查看 Juicity observer 采集状态"
+    echo "v2node external-status - 查看 Juicity/Mieru 外部协议状态"
     echo "v2node update       - 更新 v2node"
     echo "v2node update x.x.x - 安装 v2node 指定版本"
     echo "v2node install      - 安装 v2node"
@@ -1275,12 +1351,13 @@ show_menu() {
   ${green}19.${plain} 查看 DDNS/墙检测状态
   ${green}20.${plain} 停用 DDNS/墙检测
   ${green}21.${plain} 查看 Juicity observer 状态
+  ${green}22.${plain} 查看外部协议状态
 ————————————————
-  ${green}22.${plain} 退出脚本
+  ${green}23.${plain} 退出脚本
  "
  #后续更新可加入上方字符串中
     show_status
-    echo && read -rp "请输入选择 [0-22]: " num
+    echo && read -rp "请输入选择 [0-23]: " num
 
     case "${num}" in
         0) config ;;
@@ -1305,8 +1382,9 @@ show_menu() {
         19) show_ddns_status ;;
         20) disable_ddns_monitor ;;
         21) show_observer_status ;;
-        22) exit ;;
-        *) echo -e "${red}请输入正确的数字 [0-22]${plain}" ;;
+        22) show_external_status ;;
+        23) exit ;;
+        *) echo -e "${red}请输入正确的数字 [0-23]${plain}" ;;
     esac
 }
 
@@ -1332,6 +1410,7 @@ if [[ $# > 0 ]]; then
         "ddns-status") show_ddns_status $2 ;;
         "ddns-disable") disable_ddns_monitor $2 ;;
         "observer-status") show_observer_status $2 ;;
+        "external-status") show_external_status $2 ;;
         "install") check_uninstall 0 && install 0 ;;
         "uninstall") check_install 0 && uninstall 0 ;;
         "version") check_install 0 && show_v2node_version 0 ;;
