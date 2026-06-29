@@ -368,26 +368,6 @@ check_status() {
     fi
 }
 
-
-show_external_protocol_hint() {
-    echo "------------------------------------------"
-    echo -e "${yellow}Juicity/Mieru 外部协议提示${plain}"
-    echo "------------------------------------------"
-    echo "如果面板节点协议使用 juicity 或 mieru，请确认服务器已安装对应内核："
-    if command -v juicity-server >/dev/null 2>&1; then
-        echo -e "juicity-server: ${green}$(command -v juicity-server)${plain}"
-    else
-        echo -e "juicity-server: ${yellow}未检测到，请安装 patched juicity-server 才能上报 observer 流量/在线/敏感域名${plain}"
-    fi
-    if command -v mita >/dev/null 2>&1; then
-        echo -e "mita: ${green}$(command -v mita)${plain}"
-    else
-        echo -e "mita: ${yellow}未检测到，mieru 节点需要安装 mita/mieru server 组件${plain}"
-    fi
-    echo "排障命令：v2node external-status"
-    echo "Juicity observer 排障命令：v2node observer-status"
-}
-
 run_forest_after_v2node_running() {
     [[ "${V2NODE_SKIP_FOREST_POST_INSTALL:-false}" == "true" ]] && return 0
     [[ "$FOREST_POST_INSTALL_RAN" == "true" ]] && return 0
@@ -640,10 +620,7 @@ EOF
     echo "v2node install      - 安装 v2node"
     echo "v2node uninstall    - 卸载 v2node"
     echo "v2node version      - 查看 v2node 版本"
-    echo "v2node external-status - 查看 Juicity/Mieru 外部协议状态"
-    echo "v2node observer-status - 查看 Juicity observer 采集状态"
     echo "------------------------------------------"
-    show_external_protocol_hint
     curl -fsS --max-time 10 "https://api.v-50.me/counter" || true
 
     if [[ $first_install == true ]]; then
