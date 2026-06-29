@@ -76,6 +76,10 @@ func (c *Controller) Start(x *core.V2Core) error {
 			return fmt.Errorf("request cert error: %s", err)
 		}
 	}
+	if isExternalNode(node) {
+		return c.startExternalProtocol(node)
+	}
+
 	// Add new tag
 	err = c.server.AddNode(c.tag, node)
 	if err != nil {
@@ -113,9 +117,11 @@ func (c *Controller) Close() error {
 	if c.renewCertPeriodic != nil {
 		c.renewCertPeriodic.Close()
 	}
-	err := c.server.DelNode(c.tag)
-	if err != nil {
-		return fmt.Errorf("del node error: %s", err)
+	if !isExternalNode(c.info) {
+		err := c.server.DelNode(c.tag)
+		if err != nil {
+			return fmt.Errorf("del node error: %s", err)
+		}
 	}
 	return nil
 }

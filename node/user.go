@@ -9,6 +9,9 @@ import (
 )
 
 func (c *Controller) reportUserTrafficTask(ctx context.Context) (err error) {
+	if isExternalNode(c.info) && c.info.Common != nil && c.info.Common.TrafficMode == "unsupported" {
+		return c.reportExternalUnsupportedTrafficTask(ctx)
+	}
 	var reportmin = 0
 	if c.info.Common.BaseConfig != nil {
 		reportmin = c.info.Common.BaseConfig.NodeReportMinTraffic

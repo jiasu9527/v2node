@@ -32,13 +32,16 @@ type NodeInfo struct {
 }
 
 type CommonNode struct {
-	Protocol       string                `json:"protocol"`
-	ListenIP       string                `json:"listen_ip"`
-	SendThrough    string                `json:"send_through,omitempty"`
-	ServerPort     int                   `json:"server_port"`
-	Routes         []Route               `json:"routes"`
-	BaseConfig     *BaseConfig           `json:"base_config"`
-	SensitiveAudit *SensitiveAuditConfig `json:"sensitive_audit"`
+	Protocol         string                `json:"protocol"`
+	ExternalProtocol bool                  `json:"external_protocol"`
+	TrafficMode      string                `json:"traffic_mode"`
+	PasswordMode     string                `json:"password_mode"`
+	ListenIP         string                `json:"listen_ip"`
+	SendThrough      string                `json:"send_through,omitempty"`
+	ServerPort       int                   `json:"server_port"`
+	Routes           []Route               `json:"routes"`
+	BaseConfig       *BaseConfig           `json:"base_config"`
+	SensitiveAudit   *SensitiveAuditConfig `json:"sensitive_audit"`
 	//vless vmess trojan
 	Tls                int         `json:"tls"`
 	TlsSettings        TlsSettings `json:"tls_settings"`
@@ -181,11 +184,21 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode node params error: %s", err)
 	}
-	switch cm.Protocol {
-	case "vmess", "trojan", "hysteria2", "tuic", "anytls", "vless":
+	switch {
+	case IsExternalProtocol(cm.Protocol):
+		node.Type = strings.ToLower(strings.TrimSpace(cm.Protocol))
+		node.Security = None
+		cm.ExternalProtocol = true
+		if strings.TrimSpace(cm.TrafficMode) == "" {
+			cm.TrafficMode = "unsupported"
+		}
+		if strings.TrimSpace(cm.PasswordMode) == "" {
+			cm.PasswordMode = "uuid"
+		}
+	case cm.Protocol == "vmess" || cm.Protocol == "trojan" || cm.Protocol == "hysteria2" || cm.Protocol == "tuic" || cm.Protocol == "anytls" || cm.Protocol == "vless":
 		node.Type = cm.Protocol
 		node.Security = cm.Tls
-	case "shadowsocks":
+	case cm.Protocol == "shadowsocks":
 		node.Type = cm.Protocol
 		node.Security = 0
 	default:
@@ -227,6 +240,15 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 	node.Common = cm
 
 	return node, nil
+}
+
+func IsExternalProtocol(protocol string) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "juicity", "mieru":
+		return true
+	default:
+		return false
+	}
 }
 
 func intervalToTime(i interface{}) time.Duration {

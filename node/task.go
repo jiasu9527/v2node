@@ -20,10 +20,14 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		ReloadCh: c.server.ReloadCh,
 	}
 	// fetch user list task
+	trafficTask := c.reportUserTrafficTask
+	if isExternalNode(node) && node.Common != nil && node.Common.TrafficMode == "unsupported" {
+		trafficTask = c.reportExternalUnsupportedTrafficTask
+	}
 	c.userReportPeriodic = &task.Task{
 		Name:     "reportUserTrafficTask",
 		Interval: node.PushInterval,
-		Execute:  c.reportUserTrafficTask,
+		Execute:  trafficTask,
 		ReloadCh: c.server.ReloadCh,
 	}
 	c.onlineReportPeriodic = &task.Task{
