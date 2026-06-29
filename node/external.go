@@ -23,18 +23,29 @@ func isExternalNode(node *panel.NodeInfo) bool {
 }
 
 func (c *Controller) reloadExternalProtocol(node *panel.NodeInfo, users []panel.UserInfo) error {
+	oldInfo := c.info
+	c.info = node
+	if nodeNeedsCertificate(node) {
+		if err := c.requestCert(); err != nil {
+			c.info = oldInfo
+			return err
+		}
+	}
 	if c.embeddedProtocolServer != nil {
 		if err := c.embeddedProtocolServer.Stop(); err != nil {
+			c.info = oldInfo
 			return err
 		}
 		c.embeddedProtocolServer = nil
 	}
 	server, err := core.NewEmbeddedProtocolServer(node, users)
 	if err != nil {
+		c.info = oldInfo
 		return err
 	}
 	c.externalTrafficCollector = core.NewExternalTrafficCollector(node)
 	if err := server.Start(context.Background()); err != nil {
+		c.info = oldInfo
 		return err
 	}
 	c.embeddedProtocolServer = server

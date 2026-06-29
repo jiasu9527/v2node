@@ -13,8 +13,25 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	panel "github.com/wyx2685/v2node/api/v2board"
 	"github.com/wyx2685/v2node/common/file"
 )
+
+func nodeNeedsCertificate(node *panel.NodeInfo) bool {
+	if node == nil || node.Common == nil || node.Common.CertInfo == nil {
+		return false
+	}
+	if node.Security == panel.Tls {
+		return true
+	}
+	if isExternalNode(node) {
+		switch node.Common.CertInfo.CertMode {
+		case "file", "dns", "http", "self":
+			return true
+		}
+	}
+	return false
+}
 
 func (c *Controller) renewCertTask(_ context.Context) error {
 	l, err := NewLego(c.info.Common.CertInfo)
