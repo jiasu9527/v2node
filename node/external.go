@@ -94,3 +94,37 @@ func (c *Controller) reportExternalUserTrafficTask(ctx context.Context) error {
 	log.WithField("tag", c.tag).Infof("Report %d external users traffic", len(userTraffic))
 	return nil
 }
+
+func (c *Controller) reportExternalOnlineUsersTask(ctx context.Context) error {
+	if c.externalTrafficCollector == nil {
+		c.externalTrafficCollector = core.NewExternalTrafficCollector(c.info)
+	}
+	devicemin := 0
+	if c.info != nil && c.info.Common != nil && c.info.Common.BaseConfig != nil {
+		devicemin = c.info.Common.BaseConfig.DeviceOnlineMinTraffic
+	}
+	onlineUsers, err := c.externalTrafficCollector.CollectOnlineUsers(c.userList, devicemin)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Debug("Skip external online user report")
+		return nil
+	}
+	data := buildOnlineUserReportData(onlineUsers, nil, false)
+	if len(data) == 0 {
+		return nil
+	}
+	if err := c.apiClient.ReportNodeOnlineUsers(ctx, &data); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Report external online users failed")
+		return nil
+	}
+	log.WithField("tag", c.tag).Infof("Report %d external online UIDs", len(data))
+	return nil
+}

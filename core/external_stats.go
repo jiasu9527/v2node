@@ -21,9 +21,10 @@ type externalTrafficSnapshot struct {
 }
 
 type ExternalTrafficCollector struct {
-	protocol string
-	prev     map[int]externalTrafficSnapshot
-	mu       sync.Mutex
+	protocol   string
+	prev       map[int]externalTrafficSnapshot
+	onlinePrev map[int]externalTrafficSnapshot
+	mu         sync.Mutex
 }
 
 func NewExternalTrafficCollector(node *panel.NodeInfo) *ExternalTrafficCollector {
@@ -35,9 +36,35 @@ func NewExternalTrafficCollector(node *panel.NodeInfo) *ExternalTrafficCollector
 		}
 	}
 	return &ExternalTrafficCollector{
-		protocol: protocol,
-		prev:     make(map[int]externalTrafficSnapshot),
+		protocol:   protocol,
+		prev:       make(map[int]externalTrafficSnapshot),
+		onlinePrev: make(map[int]externalTrafficSnapshot),
 	}
+}
+
+func (c *ExternalTrafficCollector) CollectOnlineUsers(users []panel.UserInfo, minTrafficKB int) ([]panel.OnlineUser, error) {
+	if c == nil {
+		return nil, ErrExternalTrafficUnsupported
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var (
+		snapshots map[int]externalTrafficSnapshot
+		err       error
+	)
+	switch c.protocol {
+	case "mieru":
+		snapshots, err = c.collectMieruTraffic(users)
+	case "juicity":
+		return nil, fmt.Errorf("%w: juicity-server does not expose online user counters", ErrExternalTrafficUnsupported)
+	default:
+		return nil, fmt.Errorf("%w: %s", ErrExternalTrafficUnsupported, c.protocol)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c.deltaOnlineUsers(snapshots, minTrafficKB), nil
 }
 
 func (c *ExternalTrafficCollector) CollectTraffic(users []panel.UserInfo, minTrafficKB int) ([]panel.UserTraffic, error) {
@@ -102,6 +129,43 @@ func (c *ExternalTrafficCollector) deltaTraffic(snapshots map[int]externalTraffi
 			delete(c.prev, uid)
 		}
 	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func (c *ExternalTrafficCollector) deltaOnlineUsers(snapshots map[int]externalTrafficSnapshot, minTrafficKB int) []panel.OnlineUser {
+	if c.onlinePrev == nil {
+		c.onlinePrev = make(map[int]externalTrafficSnapshot)
+	}
+	baseline := c.onlinePrev
+	if len(baseline) == 0 {
+		baseline = c.prev
+	}
+	if len(baseline) == 0 {
+		c.onlinePrev = copyExternalTrafficSnapshots(snapshots)
+		return nil
+	}
+
+	minBytes := int64(minTrafficKB) * 1000
+	uids := make([]int, 0, len(snapshots))
+	for uid := range snapshots {
+		uids = append(uids, uid)
+	}
+	sort.Ints(uids)
+	result := make([]panel.OnlineUser, 0, len(uids))
+	for _, uid := range uids {
+		current := snapshots[uid]
+		previous, ok := baseline[uid]
+		if !ok || current.Upload < previous.Upload || current.Download < previous.Download {
+			continue
+		}
+		if current.Upload-previous.Upload+current.Download-previous.Download > minBytes {
+			result = append(result, panel.OnlineUser{UID: uid, IP: "external:" + c.protocol})
+		}
+	}
+	c.onlinePrev = copyExternalTrafficSnapshots(snapshots)
 	if len(result) == 0 {
 		return nil
 	}

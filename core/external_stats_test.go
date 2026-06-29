@@ -95,3 +95,24 @@ func TestJuicityTrafficCollectorReturnsUnsupported(t *testing.T) {
 		t.Fatal("CollectTraffic() error = nil, want unsupported error")
 	}
 }
+
+func TestMieruTrafficCollectorCollectOnlineUsersFromMetricDeltas(t *testing.T) {
+	collector := &ExternalTrafficCollector{protocol: "mieru", prev: map[int]externalTrafficSnapshot{1001: {Upload: 1000, Download: 1000}, 1002: {Upload: 2000, Download: 2000}}}
+	snapshots := map[int]externalTrafficSnapshot{1001: {Upload: 1000, Download: 1000}, 1002: {Upload: 2800, Download: 2500}}
+	got := collector.deltaOnlineUsers(snapshots, 1)
+	if len(got) != 1 || got[0].UID != 1002 || got[0].IP != "external:mieru" {
+		t.Fatalf("deltaOnlineUsers() = %#v, want uid 1002 external:mieru", got)
+	}
+}
+
+func TestMieruTrafficCollectorOnlineKeepsTrafficBaselineForLaterReport(t *testing.T) {
+	collector := &ExternalTrafficCollector{protocol: "mieru", prev: map[int]externalTrafficSnapshot{1001: {Upload: 1000, Download: 1000}}}
+	snapshots := map[int]externalTrafficSnapshot{1001: {Upload: 1300, Download: 1400}}
+	if got := collector.deltaOnlineUsers(snapshots, 0); len(got) != 1 {
+		t.Fatalf("deltaOnlineUsers() len = %d, want 1", len(got))
+	}
+	traffic := collector.deltaTraffic(snapshots, 0)
+	if len(traffic) != 1 || traffic[0].Upload != 300 || traffic[0].Download != 400 {
+		t.Fatalf("deltaTraffic after online = %#v, want unchanged traffic delta", traffic)
+	}
+}

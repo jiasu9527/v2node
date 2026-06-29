@@ -40,6 +40,9 @@ func (c *Controller) reportUserTrafficTask(ctx context.Context) (err error) {
 }
 
 func (c *Controller) reportOnlineUsersTask(ctx context.Context) (err error) {
+	if isExternalNode(c.info) {
+		return c.reportExternalOnlineUsersTask(ctx)
+	}
 	var devicemin = 0
 	if c.info.Common.BaseConfig != nil {
 		devicemin = c.info.Common.BaseConfig.DeviceOnlineMinTraffic
