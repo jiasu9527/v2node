@@ -58,6 +58,10 @@ type CommonNode struct {
 	//tuic
 	CongestionControl string `json:"congestion_control"`
 	ZeroRTTHandshake  bool   `json:"zero_rtt_handshake"`
+	//mieru
+	Transport    string `json:"transport"`
+	MTU          int    `json:"mtu"`
+	Multiplexing string `json:"multiplexing"`
 	//anytls
 	PaddingScheme []string `json:"padding_scheme,omitempty"`
 	//hysteria hysteria2
@@ -66,6 +70,26 @@ type CommonNode struct {
 	Obfs                    string `json:"obfs"`
 	ObfsPassword            string `json:"obfs-password"`
 	Ignore_Client_Bandwidth bool   `json:"ignore_client_bandwidth"`
+}
+
+func (c *CommonNode) CertInfoFile() string {
+	if c == nil {
+		return ""
+	}
+	if c.CertInfo != nil && strings.TrimSpace(c.CertInfo.CertFile) != "" {
+		return c.CertInfo.CertFile
+	}
+	return c.TlsSettings.CertFile
+}
+
+func (c *CommonNode) CertKeyFile() string {
+	if c == nil {
+		return ""
+	}
+	if c.CertInfo != nil && strings.TrimSpace(c.CertInfo.KeyFile) != "" {
+		return c.CertInfo.KeyFile
+	}
+	return c.TlsSettings.KeyFile
 }
 
 type Route struct {

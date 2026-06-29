@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	panel "github.com/wyx2685/v2node/api/v2board"
 	"github.com/wyx2685/v2node/conf"
@@ -13,6 +14,7 @@ import (
 )
 
 func TestControllerStartExternalProtocolSkipsXrayInbound(t *testing.T) {
+	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", t.TempDir())
 	limiter.Init()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -38,8 +40,8 @@ func TestControllerStartExternalProtocolSkipsXrayInbound(t *testing.T) {
 		Security:     panel.None,
 		Tag:          fmt.Sprintf("[%s]-juicity:9", srv.URL),
 		Common:       &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, TrafficMode: "unsupported", PasswordMode: "uuid", BaseConfig: &panel.BaseConfig{}},
-		PushInterval: 60,
-		PullInterval: 60,
+		PushInterval: 60 * time.Second,
+		PullInterval: 60 * time.Second,
 	}
 	controller := NewController(api, &conf.NodeConfig{NodeID: 9}, info)
 	core := &vcore.V2Core{ReloadCh: make(chan struct{}, 1)}
