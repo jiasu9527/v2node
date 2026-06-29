@@ -14,20 +14,21 @@ import (
 )
 
 type Controller struct {
-	server                  *core.V2Core
-	apiClient               *panel.Client
-	tag                     string
-	limiter                 *limiter.Limiter
-	userList                []panel.UserInfo
-	aliveMap                map[int]int
-	conf                    *conf.NodeConfig
-	info                    *panel.NodeInfo
-	nodeInfoMonitorPeriodic *task.Task
-	userReportPeriodic      *task.Task
-	onlineReportPeriodic    *task.Task
-	sensitiveReportPeriodic *task.Task
-	renewCertPeriodic       *task.Task
-	externalProcess         *core.ExternalProcess
+	server                   *core.V2Core
+	apiClient                *panel.Client
+	tag                      string
+	limiter                  *limiter.Limiter
+	userList                 []panel.UserInfo
+	aliveMap                 map[int]int
+	conf                     *conf.NodeConfig
+	info                     *panel.NodeInfo
+	nodeInfoMonitorPeriodic  *task.Task
+	userReportPeriodic       *task.Task
+	onlineReportPeriodic     *task.Task
+	sensitiveReportPeriodic  *task.Task
+	renewCertPeriodic        *task.Task
+	externalProcess          *core.ExternalProcess
+	externalTrafficCollector *core.ExternalTrafficCollector
 }
 
 // NewController return a Node controller with default parameters.

@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 
 	log "github.com/sirupsen/logrus"
 	panel "github.com/wyx2685/v2node/api/v2board"
@@ -32,6 +33,7 @@ func (c *Controller) reloadExternalProtocol(node *panel.NodeInfo, users []panel.
 	if err != nil {
 		return err
 	}
+	c.externalTrafficCollector = core.NewExternalTrafficCollector(node)
 	if err := process.Start(); err != nil {
 		return err
 	}
@@ -57,5 +59,38 @@ func (c *Controller) startExternalProtocol(node *panel.NodeInfo) error {
 
 func (c *Controller) reportExternalUnsupportedTrafficTask(_ context.Context) error {
 	log.WithField("tag", c.tag).Debug("Skip user traffic report: external protocol traffic_mode=unsupported")
+	return nil
+}
+
+func (c *Controller) reportExternalUserTrafficTask(ctx context.Context) error {
+	if c.externalTrafficCollector == nil {
+		c.externalTrafficCollector = core.NewExternalTrafficCollector(c.info)
+	}
+	reportmin := 0
+	if c.info != nil && c.info.Common != nil && c.info.Common.BaseConfig != nil {
+		reportmin = c.info.Common.BaseConfig.NodeReportMinTraffic
+	}
+	userTraffic, err := c.externalTrafficCollector.CollectTraffic(c.userList, reportmin)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Collect external user traffic failed")
+		return nil
+	}
+	if len(userTraffic) == 0 {
+		return nil
+	}
+	if err := c.apiClient.ReportUserTraffic(ctx, userTraffic); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Report external user traffic failed")
+		return nil
+	}
+	log.WithField("tag", c.tag).Infof("Report %d external users traffic", len(userTraffic))
 	return nil
 }
