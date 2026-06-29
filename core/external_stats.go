@@ -102,6 +102,10 @@ func (c *ExternalTrafficCollector) CollectOnlineUsers(users []panel.UserInfo, mi
 	case "mieru":
 		snapshots, err = c.collectMieruTraffic(users)
 	case "juicity":
+		snapshots = c.collectEmbeddedTraffic(users)
+		if len(snapshots) > 0 {
+			return c.deltaOnlineUsers(snapshots, minTrafficKB), nil
+		}
 		return c.collectObserverOnlineUsers(users, minTrafficKB)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrExternalTrafficUnsupported, c.protocol)
@@ -171,6 +175,10 @@ func (c *ExternalTrafficCollector) CollectTraffic(users []panel.UserInfo, minTra
 	case "mieru":
 		snapshots, err = c.collectMieruTraffic(users)
 	case "juicity":
+		snapshots = c.collectEmbeddedTraffic(users)
+		if len(snapshots) > 0 {
+			return c.deltaTraffic(snapshots, minTrafficKB), nil
+		}
 		return c.collectObserverTraffic(users, minTrafficKB)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrExternalTrafficUnsupported, c.protocol)
@@ -267,6 +275,16 @@ func copyExternalTrafficSnapshots(in map[int]externalTrafficSnapshot) map[int]ex
 		out[uid] = snapshot
 	}
 	return out
+}
+
+func (c *ExternalTrafficCollector) collectEmbeddedTraffic(users []panel.UserInfo) map[int]externalTrafficSnapshot {
+	uuidByUID := make(map[int]string, len(users))
+	for _, user := range users {
+		if strings.TrimSpace(user.Uuid) != "" {
+			uuidByUID[user.Id] = user.Uuid
+		}
+	}
+	return globalEmbeddedTraffic.snapshot(c.nodeID, uuidByUID)
 }
 
 func (c *ExternalTrafficCollector) collectMieruTraffic(users []panel.UserInfo) (map[int]externalTrafficSnapshot, error) {

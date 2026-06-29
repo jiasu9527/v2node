@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	juicityLog "github.com/juicity/juicity/pkg/log"
-	juicityServer "github.com/juicity/juicity/server"
 	panel "github.com/wyx2685/v2node/api/v2board"
+	juicityServer "github.com/wyx2685/v2node/core/juicityembedded"
 )
 
 type embeddedJuicityServer struct {
@@ -63,7 +63,11 @@ func (s *embeddedJuicityServer) Stop() error {
 		s.cancel()
 	}
 	s.cancel = nil
-	s.server = nil
+	if s.server != nil {
+		err := s.server.Close()
+		s.server = nil
+		return err
+	}
 	return nil
 }
 
@@ -96,5 +100,6 @@ func buildJuicityServerOptions(node *panel.NodeInfo, users []panel.UserInfo) (*j
 		Fwmark:                fwmark,
 		SendThrough:           node.Common.SendThrough,
 		DisableOutboundUdp443: false,
+		Observer:              embeddedTrafficObserver{nodeID: node.Id},
 	}, listen, nil
 }
