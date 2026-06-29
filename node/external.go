@@ -23,21 +23,21 @@ func isExternalNode(node *panel.NodeInfo) bool {
 }
 
 func (c *Controller) reloadExternalProtocol(node *panel.NodeInfo, users []panel.UserInfo) error {
-	if c.externalProcess != nil {
-		if err := c.externalProcess.Stop(); err != nil {
+	if c.embeddedProtocolServer != nil {
+		if err := c.embeddedProtocolServer.Stop(); err != nil {
 			return err
 		}
-		c.externalProcess = nil
+		c.embeddedProtocolServer = nil
 	}
-	process, err := core.NewExternalProcess(node, users)
+	server, err := core.NewEmbeddedProtocolServer(node, users)
 	if err != nil {
 		return err
 	}
 	c.externalTrafficCollector = core.NewExternalTrafficCollector(node)
-	if err := process.Start(); err != nil {
+	if err := server.Start(context.Background()); err != nil {
 		return err
 	}
-	c.externalProcess = process
+	c.embeddedProtocolServer = server
 	return nil
 }
 
@@ -45,14 +45,11 @@ func (c *Controller) startExternalProtocol(node *panel.NodeInfo) error {
 	if err := c.reloadExternalProtocol(node, c.userList); err != nil {
 		return err
 	}
-	process := c.externalProcess
 	c.info = node
 	log.WithFields(log.Fields{
-		"tag":         c.tag,
-		"protocol":    node.Type,
-		"config_path": process.ConfigPath,
-		"command":     process.Command,
-	}).Info("Started external protocol process without Xray inbound")
+		"tag":      c.tag,
+		"protocol": node.Type,
+	}).Info("Started embedded protocol server without Xray inbound")
 	c.startTasks(node)
 	return nil
 }

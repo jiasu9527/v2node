@@ -27,7 +27,7 @@ type Controller struct {
 	onlineReportPeriodic     *task.Task
 	sensitiveReportPeriodic  *task.Task
 	renewCertPeriodic        *task.Task
-	externalProcess          *core.ExternalProcess
+	embeddedProtocolServer   core.EmbeddedProtocolServer
 	externalTrafficCollector *core.ExternalTrafficCollector
 }
 
@@ -120,8 +120,8 @@ func (c *Controller) Close() error {
 		c.renewCertPeriodic.Close()
 	}
 	if isExternalNode(c.info) {
-		if c.externalProcess != nil {
-			return c.externalProcess.Stop()
+		if c.embeddedProtocolServer != nil {
+			return c.embeddedProtocolServer.Stop()
 		}
 		return nil
 	}

@@ -1,44 +1,27 @@
 package core
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
+	mieruMetrics "github.com/enfein/mieru/v3/pkg/metrics"
 	panel "github.com/wyx2685/v2node/api/v2board"
 )
 
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
-func TestMieruTrafficCollectorReportsDeltasFromMetricsJSON(t *testing.T) {
-	tmp := t.TempDir()
-	calls := filepath.Join(tmp, "calls")
-	metrics := filepath.Join(tmp, "metrics.json")
-	bin := filepath.Join(tmp, "mita")
-	script := "#!/usr/bin/env sh\n" +
-		"echo \"$@\" >> " + shellQuote(calls) + "\n" +
-		"if [ \"$1 $2\" = \"get metrics\" ]; then cat " + shellQuote(metrics) + "; exit 0; fi\n" +
-		"exit 0\n"
-	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
-		t.Fatalf("write fake mita: %v", err)
-	}
-	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
-
+func TestMieruTrafficCollectorReportsDeltasFromInProcessMetrics(t *testing.T) {
 	collector := NewExternalTrafficCollector(&panel.NodeInfo{Id: 8, Type: "mieru", Common: &panel.CommonNode{Protocol: "mieru"}})
-	users := []panel.UserInfo{{Id: 1001, Uuid: "uuid-1001"}, {Id: 1002, Uuid: "uuid-1002"}}
+	users := []panel.UserInfo{{Id: 910001, Uuid: "uuid-910001"}, {Id: 910002, Uuid: "uuid-910002"}}
 
-	first := `{
-        "users": {
-            "1001": {"DownloadBytes": 5000, "UploadBytes": 7000},
-            "1002": {"DownloadBytes": 100, "UploadBytes": 200}
-        }
-    }`
-	if err := os.WriteFile(metrics, []byte(first), 0644); err != nil {
-		t.Fatalf("write metrics: %v", err)
-	}
+	up1 := mieruMetrics.RegisterMetric(fmt.Sprintf(mieruMetrics.UserMetricGroupFormat, "910001"), mieruMetrics.UserMetricUploadBytes, mieruMetrics.COUNTER_TIME_SERIES).(*mieruMetrics.Counter)
+	down1 := mieruMetrics.RegisterMetric(fmt.Sprintf(mieruMetrics.UserMetricGroupFormat, "910001"), mieruMetrics.UserMetricDownloadBytes, mieruMetrics.COUNTER_TIME_SERIES).(*mieruMetrics.Counter)
+	up2 := mieruMetrics.RegisterMetric(fmt.Sprintf(mieruMetrics.UserMetricGroupFormat, "910002"), mieruMetrics.UserMetricUploadBytes, mieruMetrics.COUNTER_TIME_SERIES).(*mieruMetrics.Counter)
+	down2 := mieruMetrics.RegisterMetric(fmt.Sprintf(mieruMetrics.UserMetricGroupFormat, "910002"), mieruMetrics.UserMetricDownloadBytes, mieruMetrics.COUNTER_TIME_SERIES).(*mieruMetrics.Counter)
+
+	up1.Add(7000)
+	down1.Add(5000)
+	up2.Add(200)
+	down2.Add(100)
 	got, err := collector.CollectTraffic(users, 0)
 	if err != nil {
 		t.Fatalf("first CollectTraffic() error = %v", err)
@@ -47,15 +30,10 @@ func TestMieruTrafficCollectorReportsDeltasFromMetricsJSON(t *testing.T) {
 		t.Fatalf("first CollectTraffic() = %#v, want baseline only", got)
 	}
 
-	second := `{
-        "users": {
-            "1001": {"DownloadBytes": 9000, "UploadBytes": 9000},
-            "1002": {"DownloadBytes": 150, "UploadBytes": 250}
-        }
-    }`
-	if err := os.WriteFile(metrics, []byte(second), 0644); err != nil {
-		t.Fatalf("write metrics: %v", err)
-	}
+	up1.Add(2000)
+	down1.Add(4000)
+	up2.Add(50)
+	down2.Add(50)
 	got, err = collector.CollectTraffic(users, 0)
 	if err != nil {
 		t.Fatalf("second CollectTraffic() error = %v", err)
@@ -67,11 +45,11 @@ func TestMieruTrafficCollectorReportsDeltasFromMetricsJSON(t *testing.T) {
 	for _, traffic := range got {
 		byUID[traffic.UID] = traffic
 	}
-	if byUID[1001].Upload != 2000 || byUID[1001].Download != 4000 {
-		t.Fatalf("uid 1001 delta = %#v, want up=2000 down=4000", byUID[1001])
+	if byUID[910001].Upload != 2000 || byUID[910001].Download != 4000 {
+		t.Fatalf("uid 910001 delta = %#v, want up=2000 down=4000", byUID[910001])
 	}
-	if byUID[1002].Upload != 50 || byUID[1002].Download != 50 {
-		t.Fatalf("uid 1002 delta = %#v, want up=50 down=50", byUID[1002])
+	if byUID[910002].Upload != 50 || byUID[910002].Download != 50 {
+		t.Fatalf("uid 910002 delta = %#v, want up=50 down=50", byUID[910002])
 	}
 }
 
@@ -105,7 +83,7 @@ func TestMieruTrafficCollectorCollectOnlineUsersFromMetricDeltas(t *testing.T) {
 	snapshots := map[int]externalTrafficSnapshot{1001: {Upload: 1000, Download: 1000}, 1002: {Upload: 2800, Download: 2500}}
 	got := collector.deltaOnlineUsers(snapshots, 1)
 	if len(got) != 1 || got[0].UID != 1002 || got[0].IP != "external:mieru" {
-		t.Fatalf("deltaOnlineUsers() = %#v, want uid 1002 external:mieru", got)
+		t.Fatalf("deltaOnlineUsers() = %#v, want uid 910002 external:mieru", got)
 	}
 }
 
@@ -137,14 +115,14 @@ func TestJuicityObserverLogReportsTrafficAndOnline(t *testing.T) {
 		t.Fatalf("CollectTraffic() error = %v", err)
 	}
 	if len(traffic) != 1 || traffic[0].UID != 1001 || traffic[0].Upload != 1234 || traffic[0].Download != 5678 {
-		t.Fatalf("CollectTraffic() = %#v, want uid 1001 up/down", traffic)
+		t.Fatalf("CollectTraffic() = %#v, want uid 910001 up/down", traffic)
 	}
 	online, err := collector.CollectOnlineUsers(users, 0)
 	if err != nil {
 		t.Fatalf("CollectOnlineUsers() error = %v", err)
 	}
 	if len(online) != 1 || online[0].UID != 1001 || online[0].IP != "203.0.113.9" {
-		t.Fatalf("CollectOnlineUsers() = %#v, want uid 1001 ip", online)
+		t.Fatalf("CollectOnlineUsers() = %#v, want uid 910001 ip", online)
 	}
 
 	traffic, err = collector.CollectTraffic(users, 0)

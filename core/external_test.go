@@ -2,12 +2,8 @@ package core
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	panel "github.com/wyx2685/v2node/api/v2board"
 )
@@ -87,74 +83,6 @@ func TestRenderMieruConfig(t *testing.T) {
 	user := usersList[0].(map[string]any)
 	if user["name"] != "1" || user["password"] != "user-uuid-1" {
 		t.Fatalf("unexpected mieru user: %#v", user)
-	}
-}
-
-func TestMieruExternalProcessUsesApplyConfigAndServiceCommands(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
-	calls := filepath.Join(tmp, "calls")
-	bin := filepath.Join(tmp, "mita")
-	script := fmt.Sprintf("#!/usr/bin/env sh\necho \"$@\" >> %q\n", calls)
-	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
-		t.Fatalf("write fake mita: %v", err)
-	}
-	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	node := &panel.NodeInfo{Id: 8, Type: "mieru", Common: &panel.CommonNode{Protocol: "mieru", ExternalProtocol: true, ServerPort: 2999}}
-	process, err := NewExternalProcess(node, []panel.UserInfo{{Id: 1, Uuid: "user-uuid"}})
-	if err != nil {
-		t.Fatalf("NewExternalProcess() error = %v", err)
-	}
-	if err := process.Start(); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	if err := process.Stop(); err != nil {
-		t.Fatalf("Stop() error = %v", err)
-	}
-	raw, err := os.ReadFile(calls)
-	if err != nil {
-		t.Fatalf("read calls: %v", err)
-	}
-	body := string(raw)
-	if !strings.Contains(body, "apply config "+process.ConfigPath) || !strings.Contains(body, "start") || !strings.Contains(body, "stop") {
-		t.Fatalf("unexpected mita calls: %q", body)
-	}
-}
-
-func TestJuicityExternalProcessUsesRunConfigCommand(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
-	calls := filepath.Join(tmp, "calls")
-	bin := filepath.Join(tmp, "juicity-server")
-	script := fmt.Sprintf("#!/usr/bin/env sh\necho \"$@\" > %q\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n", calls)
-	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
-		t.Fatalf("write fake juicity-server: %v", err)
-	}
-	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	node := &panel.NodeInfo{Id: 7, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, ServerPort: 443}}
-	process, err := NewExternalProcess(node, []panel.UserInfo{{Id: 1, Uuid: "user-uuid"}})
-	if err != nil {
-		t.Fatalf("NewExternalProcess() error = %v", err)
-	}
-	if err := process.Start(); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	defer process.Stop()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if raw, err := os.ReadFile(calls); err == nil {
-			body := string(raw)
-			if strings.Contains(body, "run -c "+process.ConfigPath) {
-				return
-			}
-			t.Fatalf("unexpected juicity call: %q", body)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("juicity call was not recorded")
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
 

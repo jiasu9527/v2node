@@ -2,11 +2,9 @@ package node
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,24 +14,8 @@ import (
 	"github.com/wyx2685/v2node/limiter"
 )
 
-func installFakeExternalBinary(t *testing.T, dir string, name string, marker string) {
-	t.Helper()
-	bin := filepath.Join(dir, name)
-	script := fmt.Sprintf(`#!/usr/bin/env sh
-if [ -n %q ]; then echo "$@" > %q; fi
-trap 'exit 0' TERM INT
-while true; do sleep 1; done
-`, marker, marker)
-	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
-		t.Fatalf("write fake %s: %v", name, err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
 func TestControllerStartExternalProtocolSkipsXrayInbound(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
-	installFakeExternalBinary(t, tmp, "juicity-server", "")
+	t.Setenv("PATH", t.TempDir())
 	limiter.Init()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -58,29 +40,23 @@ func TestControllerStartExternalProtocolSkipsXrayInbound(t *testing.T) {
 		Type:         "juicity",
 		Security:     panel.None,
 		Tag:          fmt.Sprintf("[%s]-juicity:9", srv.URL),
-		Common:       &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, TrafficMode: "unsupported", PasswordMode: "uuid", BaseConfig: &panel.BaseConfig{}},
+		Common:       &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, TrafficMode: "unsupported", PasswordMode: "uuid", ServerPort: 0, TlsSettings: panel.TlsSettings{CertFile: "testdata/missing.crt", KeyFile: "testdata/missing.key"}, BaseConfig: &panel.BaseConfig{}},
 		PushInterval: 60 * time.Second,
 		PullInterval: 60 * time.Second,
 	}
 	controller := NewController(api, &conf.NodeConfig{NodeID: 9}, info)
 	core := &vcore.V2Core{ReloadCh: make(chan struct{}, 1)}
 
-	if err := controller.Start(core); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	defer controller.Close()
-	if controller.info == nil || controller.info.Type != "juicity" {
-		t.Fatalf("unexpected controller info: %#v", controller.info)
+	if err := controller.Start(core); err == nil {
+		_ = controller.Close()
+		t.Fatalf("Start() succeeded with missing juicity cert; want embedded server validation error")
 	}
 }
 
-func TestControllerStartExternalProtocolStartsAndStopsProcess(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
-	marker := filepath.Join(tmp, "started")
-	installFakeExternalBinary(t, tmp, "juicity-server", marker)
+func TestControllerStartMieruUsesEmbeddedServerWithoutExternalBinary(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	port := unusedTCPPort(t)
 	limiter.Init()
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/server/UniProxy/user":
@@ -101,10 +77,10 @@ func TestControllerStartExternalProtocolStartsAndStopsProcess(t *testing.T) {
 	}
 	info := &panel.NodeInfo{
 		Id:           9,
-		Type:         "juicity",
+		Type:         "mieru",
 		Security:     panel.None,
-		Tag:          fmt.Sprintf("[%s]-juicity:9", srv.URL),
-		Common:       &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, TrafficMode: "unsupported", PasswordMode: "uuid", ServerPort: 443, BaseConfig: &panel.BaseConfig{}},
+		Tag:          fmt.Sprintf("[%s]-mieru:9", srv.URL),
+		Common:       &panel.CommonNode{Protocol: "mieru", ExternalProtocol: true, TrafficMode: "metrics", PasswordMode: "uuid", ServerPort: port, Transport: "TCP", BaseConfig: &panel.BaseConfig{}},
 		PushInterval: time.Hour,
 		PullInterval: time.Hour,
 	}
@@ -114,49 +90,37 @@ func TestControllerStartExternalProtocolStartsAndStopsProcess(t *testing.T) {
 	if err := controller.Start(core); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if _, err := os.Stat(marker); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = controller.Close()
-			t.Fatalf("external process was not started: marker %s was not created", marker)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if err := controller.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	defer controller.Close()
+	if controller.embeddedProtocolServer == nil || controller.embeddedProtocolServer.Protocol() != "mieru" {
+		t.Fatalf("embedded protocol server not started: %#v", controller.embeddedProtocolServer)
 	}
 }
 
-func TestControllerReloadExternalProtocolRerendersConfig(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
-	installFakeExternalBinary(t, tmp, "juicity-server", "")
+func TestControllerReloadExternalProtocolUsesEmbeddedServer(t *testing.T) {
+	port := unusedTCPPort(t)
 	info := &panel.NodeInfo{
 		Id:       10,
-		Type:     "juicity",
-		Tag:      "external-juicity:10",
-		Common:   &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, TrafficMode: "unsupported", PasswordMode: "uuid", ServerPort: 443, BaseConfig: &panel.BaseConfig{}},
+		Type:     "mieru",
+		Tag:      "embedded-mieru:10",
+		Common:   &panel.CommonNode{Protocol: "mieru", ExternalProtocol: true, TrafficMode: "metrics", PasswordMode: "uuid", ServerPort: port, Transport: "TCP", BaseConfig: &panel.BaseConfig{}},
 		Security: panel.None,
 	}
-	controller := &Controller{tag: info.Tag, info: info, userList: []panel.UserInfo{{Id: 1, Uuid: "old-user"}}}
+	controller := &Controller{tag: info.Tag, info: info, userList: []panel.UserInfo{{Id: 1, Uuid: "11111111-1111-1111-1111-111111111111"}}}
 	if err := controller.reloadExternalProtocol(info, controller.userList); err != nil {
-		t.Fatalf("initial reloadExternalProtocol() error = %v", err)
-	}
-	defer controller.Close()
-
-	newUsers := []panel.UserInfo{{Id: 2, Uuid: "new-user"}}
-	if err := controller.reloadExternalProtocol(info, newUsers); err != nil {
 		t.Fatalf("reloadExternalProtocol() error = %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(tmp, "external-juicity-10.json"))
+	defer controller.Close()
+	if controller.embeddedProtocolServer == nil || controller.embeddedProtocolServer.Protocol() != "mieru" {
+		t.Fatalf("embedded protocol server not started: %#v", controller.embeddedProtocolServer)
+	}
+}
+
+func unusedTCPPort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("read external config: %v", err)
+		t.Fatalf("listen unused port: %v", err)
 	}
-	body := string(raw)
-	if !strings.Contains(body, "new-user") || strings.Contains(body, "old-user") {
-		t.Fatalf("external config was not rerendered for new users: %s", body)
-	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
 }

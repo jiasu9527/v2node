@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
+	mieruMetrics "github.com/enfein/mieru/v3/pkg/metrics"
 	panel "github.com/wyx2685/v2node/api/v2board"
 )
 
@@ -270,11 +270,28 @@ func copyExternalTrafficSnapshots(in map[int]externalTrafficSnapshot) map[int]ex
 }
 
 func (c *ExternalTrafficCollector) collectMieruTraffic(users []panel.UserInfo) (map[int]externalTrafficSnapshot, error) {
-	output, err := exec.Command("mita", "get", "metrics").CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("mita get metrics failed: %w: %s", err, strings.TrimSpace(string(output)))
+	result := make(map[int]externalTrafficSnapshot)
+	for _, user := range users {
+		uidName := strconv.Itoa(user.Id)
+		group := mieruMetrics.GetMetricGroupByName(fmt.Sprintf(mieruMetrics.UserMetricGroupFormat, uidName))
+		if group == nil {
+			continue
+		}
+		uploadMetric, okUpload := group.GetMetric(mieruMetrics.UserMetricUploadBytes)
+		downloadMetric, okDownload := group.GetMetric(mieruMetrics.UserMetricDownloadBytes)
+		if !okUpload && !okDownload {
+			continue
+		}
+		snapshot := externalTrafficSnapshot{}
+		if counter, ok := uploadMetric.(*mieruMetrics.Counter); ok {
+			snapshot.Upload = counter.Load()
+		}
+		if counter, ok := downloadMetric.(*mieruMetrics.Counter); ok {
+			snapshot.Download = counter.Load()
+		}
+		result[user.Id] = snapshot
 	}
-	return ParseMieruMetricsTraffic(output, users)
+	return result, nil
 }
 
 func ParseMieruMetricsTraffic(raw []byte, users []panel.UserInfo) (map[int]externalTrafficSnapshot, error) {
