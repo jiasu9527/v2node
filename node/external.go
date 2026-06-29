@@ -21,17 +21,36 @@ func isExternalNode(node *panel.NodeInfo) bool {
 	return false
 }
 
-func (c *Controller) startExternalProtocol(node *panel.NodeInfo) error {
-	process, err := core.NewExternalProcess(node, c.userList)
+func (c *Controller) reloadExternalProtocol(node *panel.NodeInfo, users []panel.UserInfo) error {
+	if c.externalProcess != nil {
+		if err := c.externalProcess.Stop(); err != nil {
+			return err
+		}
+		c.externalProcess = nil
+	}
+	process, err := core.NewExternalProcess(node, users)
 	if err != nil {
 		return err
 	}
+	if err := process.Start(); err != nil {
+		return err
+	}
+	c.externalProcess = process
+	return nil
+}
+
+func (c *Controller) startExternalProtocol(node *panel.NodeInfo) error {
+	if err := c.reloadExternalProtocol(node, c.userList); err != nil {
+		return err
+	}
+	process := c.externalProcess
 	c.info = node
 	log.WithFields(log.Fields{
 		"tag":         c.tag,
 		"protocol":    node.Type,
 		"config_path": process.ConfigPath,
-	}).Info("Rendered external protocol config without Xray inbound")
+		"command":     process.Command,
+	}).Info("Started external protocol process without Xray inbound")
 	c.startTasks(node)
 	return nil
 }

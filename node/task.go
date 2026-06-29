@@ -133,6 +133,21 @@ func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 		return nil
 	}
 	deleted, added, modified := compareUserList(c.userList, newU)
+	if isExternalNode(c.info) {
+		if len(added) > 0 || len(deleted) > 0 || len(modified) > 0 {
+			if err := c.reloadExternalProtocol(c.info, newU); err != nil {
+				log.WithFields(log.Fields{
+					"tag": c.tag,
+					"err": err,
+				}).Error("Reload external protocol failed")
+				return nil
+			}
+			c.limiter.UpdateUser(c.tag, added, deleted, modified)
+		}
+		c.userList = newU
+		log.WithField("tag", c.tag).Infof("External protocol users reloaded: %d deleted, %d added, %d modified", len(deleted), len(added), len(modified))
+		return nil
+	}
 	if len(deleted) > 0 {
 		// have deleted users
 		err = c.server.DelUsers(deleted, c.tag, c.info)

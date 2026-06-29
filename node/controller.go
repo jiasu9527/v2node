@@ -27,6 +27,7 @@ type Controller struct {
 	onlineReportPeriodic    *task.Task
 	sensitiveReportPeriodic *task.Task
 	renewCertPeriodic       *task.Task
+	externalProcess         *core.ExternalProcess
 }
 
 // NewController return a Node controller with default parameters.
@@ -117,11 +118,15 @@ func (c *Controller) Close() error {
 	if c.renewCertPeriodic != nil {
 		c.renewCertPeriodic.Close()
 	}
-	if !isExternalNode(c.info) {
-		err := c.server.DelNode(c.tag)
-		if err != nil {
-			return fmt.Errorf("del node error: %s", err)
+	if isExternalNode(c.info) {
+		if c.externalProcess != nil {
+			return c.externalProcess.Stop()
 		}
+		return nil
+	}
+	err := c.server.DelNode(c.tag)
+	if err != nil {
+		return fmt.Errorf("del node error: %s", err)
 	}
 	return nil
 }
