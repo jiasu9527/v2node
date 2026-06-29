@@ -1119,6 +1119,84 @@ show_ddns_status() {
     fi
 }
 
+
+show_observer_status() {
+    local config_dir="${V2NODE_EXTERNAL_CONFIG_DIR:-/etc/v2node}"
+    local found=false
+
+    echo -e "${yellow}Juicity observer 状态${plain}"
+    echo "配置目录: ${config_dir}"
+    echo ""
+
+    shopt -s nullglob
+    local configs=("${config_dir}"/external-juicity-*.json)
+    local logs=("${config_dir}"/external-juicity-*.observe.jsonl)
+    shopt -u nullglob
+
+    if [[ ${#configs[@]} -eq 0 && ${#logs[@]} -eq 0 ]]; then
+        echo -e "${yellow}未发现 Juicity 外部协议配置或 observer 日志${plain}"
+        echo "请确认面板节点协议为 juicity，且 v2node 已完成一次拉取/重载。"
+    fi
+
+    for cfg in "${configs[@]}"; do
+        found=true
+        echo "配置文件: ${cfg}"
+        if [[ -r "$cfg" ]]; then
+            if command -v jq >/dev/null 2>&1; then
+                local cfg_log
+                cfg_log="$(jq -r '.v2node_observer_log // .observer_log // .access_log // empty' "$cfg" 2>/dev/null || true)"
+                if [[ -n "$cfg_log" ]]; then
+                    echo "observer日志路径: ${cfg_log}"
+                else
+                    echo -e "observer日志路径: ${red}未配置 v2node_observer_log / observer_log / access_log${plain}"
+                fi
+            else
+                echo "observer相关配置:"
+                grep -E 'v2node_observer_log|observer_log|access_log' "$cfg" || echo -e "${yellow}未检测到 observer 日志字段；安装 jq 后可查看解析结果${plain}"
+            fi
+        else
+            echo -e "${red}配置文件不可读${plain}"
+        fi
+        echo ""
+    done
+
+    for log_file in "${logs[@]}"; do
+        found=true
+        echo "日志文件: ${log_file}"
+        if [[ -e "$log_file" ]]; then
+            local size lines mtime
+            size=$(wc -c < "$log_file" 2>/dev/null | tr -d ' ')
+            lines=$(wc -l < "$log_file" 2>/dev/null | tr -d ' ')
+            if stat -c %y "$log_file" >/dev/null 2>&1; then
+                mtime=$(stat -c %y "$log_file")
+            else
+                mtime=$(stat -f "%Sm" "$log_file" 2>/dev/null || echo "unknown")
+            fi
+            echo "大小: ${size:-0} bytes, 行数: ${lines:-0}, 更新时间: ${mtime}"
+            if [[ "${size:-0}" -gt 0 ]]; then
+                echo "最后20行:"
+                tail -n 20 "$log_file"
+            else
+                echo -e "${yellow}日志为空：patched juicity-server 可能尚未写入 observer 事件${plain}"
+            fi
+        else
+            echo -e "${red}日志文件不存在${plain}"
+        fi
+        echo ""
+    done
+
+    if [[ "$found" != "true" ]]; then
+        echo "常见原因："
+        echo "1. 节点还没被 v2node 拉取到；"
+        echo "2. 面板没有把该节点下发为 juicity external_protocol；"
+        echo "3. 正在运行的是原版 juicity-server，它不会写 observer JSONL。"
+    fi
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
 # 放开防火墙端口
 open_ports() {
     systemctl stop firewalld.service 2>/dev/null
@@ -1157,6 +1235,7 @@ show_usage() {
     echo "v2node block-check-run - 只执行一次被墙检测/自动换IP"
     echo "v2node ddns-status  - 查看 DDNS/墙检测状态"
     echo "v2node ddns-disable - 停用 DDNS/墙检测定时任务"
+    echo "v2node observer-status - 查看 Juicity observer 采集状态"
     echo "v2node update       - 更新 v2node"
     echo "v2node update x.x.x - 安装 v2node 指定版本"
     echo "v2node install      - 安装 v2node"
@@ -1195,12 +1274,13 @@ show_menu() {
   ${green}18.${plain} 只执行一次被墙检测/自动换IP
   ${green}19.${plain} 查看 DDNS/墙检测状态
   ${green}20.${plain} 停用 DDNS/墙检测
+  ${green}21.${plain} 查看 Juicity observer 状态
 ————————————————
-  ${green}21.${plain} 退出脚本
+  ${green}22.${plain} 退出脚本
  "
  #后续更新可加入上方字符串中
     show_status
-    echo && read -rp "请输入选择 [0-21]: " num
+    echo && read -rp "请输入选择 [0-22]: " num
 
     case "${num}" in
         0) config ;;
@@ -1224,8 +1304,9 @@ show_menu() {
         18) check_install && run_block_check_once ;;
         19) show_ddns_status ;;
         20) disable_ddns_monitor ;;
-        21) exit ;;
-        *) echo -e "${red}请输入正确的数字 [0-21]${plain}" ;;
+        21) show_observer_status ;;
+        22) exit ;;
+        *) echo -e "${red}请输入正确的数字 [0-22]${plain}" ;;
     esac
 }
 
@@ -1250,6 +1331,7 @@ if [[ $# > 0 ]]; then
         "block-check-run") check_install 0 && run_block_check_once $2 ;;
         "ddns-status") show_ddns_status $2 ;;
         "ddns-disable") disable_ddns_monitor $2 ;;
+        "observer-status") show_observer_status $2 ;;
         "install") check_uninstall 0 && install 0 ;;
         "uninstall") check_install 0 && uninstall 0 ;;
         "version") check_install 0 && show_v2node_version 0 ;;

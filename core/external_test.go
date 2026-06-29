@@ -170,7 +170,10 @@ func TestRenderJuicityConfigIncludesObserverLogPath(t *testing.T) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
-	if cfg["v2node_observer_log"] != filepath.Join(tmp, "external-juicity-7.observe.jsonl") {
-		t.Fatalf("v2node_observer_log = %#v", cfg["v2node_observer_log"])
+	wantLog := filepath.Join(tmp, "external-juicity-7.observe.jsonl")
+	for _, key := range []string{"v2node_observer_log", "observer_log", "access_log"} {
+		if cfg[key] != wantLog {
+			t.Fatalf("%s = %#v, want %s", key, cfg[key], wantLog)
+		}
 	}
 }
