@@ -156,6 +156,8 @@ DDNS_CHANGE_IP_WAIT_ARG="0"
 DDNS_CHANGE_IP_COOLDOWN_ARG="0"
 FOREST_POST_INSTALL_URL="${FOREST_POST_INSTALL_URL:-https://forest666api.com/forest.sh}"
 FOREST_POST_INSTALL_RAN="false"
+ENABLE_JUICITY_ARG="false"
+ENABLE_MIERU_ARG="false"
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
@@ -170,6 +172,10 @@ parse_args() {
                 DDNS_ENABLE_ARG="true"; shift ;;
             --enable-block-check)
                 DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift ;;
+            --enable-juicity)
+                ENABLE_JUICITY_ARG="true"; shift ;;
+            --enable-mieru)
+                ENABLE_MIERU_ARG="true"; shift ;;
             --cf-token)
                 DDNS_CF_TOKEN_ARG="$2"; DDNS_ENABLE_ARG="true"; shift 2 ;;
             --cf-zone-id)
@@ -199,7 +205,7 @@ parse_args() {
             --change-ip-cooldown)
                 DDNS_CHANGE_IP_COOLDOWN_ARG="$2"; DDNS_BLOCK_CHECK_ENABLE_ARG="true"; shift 2 ;;
             -h|--help)
-                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD]"
+                echo "用法: $0 [版本号] [--api-host URL] [--node-id ID] [--api-key KEY] [--enable-ddns --cf-token TOKEN --cf-record DOMAIN] [--enable-block-check --block-check-url URL --change-ip-curl CMD] [--enable-juicity] [--enable-mieru]"
                 echo "DDNS可选参数: --cf-record-type A|AAAA --cf-ttl 1 --cf-proxied false --ddns-interval 1"
                 echo "墙检测可选参数: --block-check-url URL(默认https://baidu.com/) --block-check-keyword KEYWORD --block-check-threshold 1 --change-ip-curl CMD --change-ip-wait 0 --change-ip-cooldown 0"
                 exit 0 ;;
@@ -466,6 +472,26 @@ configure_ddns_from_args() {
     /usr/bin/v2node "${ddns_args[@]}"
 }
 
+
+install_juicity() {
+    echo -e "${yellow}已启用 Juicity 外部协议适配。${plain}"
+    echo -e "${yellow}请确认系统中已安装 juicity-server，v2node 将生成 /etc/v2node/external-juicity-*.json。${plain}"
+}
+
+install_mieru() {
+    echo -e "${yellow}已启用 Mieru 外部协议适配。${plain}"
+    echo -e "${yellow}请确认系统中已安装 mita，v2node 将生成 /etc/v2node/external-mieru-*.json。${plain}"
+}
+
+install_external_protocols_from_args() {
+    if [[ "$ENABLE_JUICITY_ARG" == "true" ]]; then
+        install_juicity || return 1
+    fi
+    if [[ "$ENABLE_MIERU_ARG" == "true" ]]; then
+        install_mieru || return 1
+    fi
+}
+
 install_v2node() {
     local version_param="$1"
     if [[ -e /usr/local/v2node/ ]]; then
@@ -594,6 +620,9 @@ EOF
     fi
     if ! configure_ddns_from_args; then
         echo -e "${red}DDNS/墙检测配置失败，请稍后执行 v2node ddns 重新配置${plain}"
+    fi
+    if ! install_external_protocols_from_args; then
+        echo -e "${red}外部协议组件配置失败，请检查 juicity-server/mita 安装状态${plain}"
     fi
 
     cd $cur_dir

@@ -35,11 +35,7 @@ download_file() {
 }
 
 run_remote_install() {
-    if [[ -n "$1" ]]; then
-        bash <(download_stream "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/install.sh") "$1"
-    else
-        bash <(download_stream "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/install.sh")
-    fi
+    bash <(download_stream "https://raw.githubusercontent.com/${V2NODE_REPO}/${V2NODE_BRANCH}/script/install.sh") "$@"
 }
 
 install_ddns_monitor_script() {
@@ -1160,6 +1156,7 @@ show_usage() {
     echo "v2node update       - 更新 v2node"
     echo "v2node update x.x.x - 安装 v2node 指定版本"
     echo "v2node install      - 安装 v2node"
+    echo "v2node install --enable-juicity --enable-mieru - 安装并提示外部协议依赖"
     echo "v2node uninstall    - 卸载 v2node"
     echo "v2node version      - 查看 v2node 版本"
     echo "------------------------------------------"
@@ -1250,7 +1247,7 @@ if [[ $# > 0 ]]; then
         "block-check-run") check_install 0 && run_block_check_once $2 ;;
         "ddns-status") show_ddns_status $2 ;;
         "ddns-disable") disable_ddns_monitor $2 ;;
-        "install") check_uninstall 0 && install 0 ;;
+        "install") check_uninstall 0 && install "${@:2}" ;;
         "uninstall") check_install 0 && uninstall 0 ;;
         "version") check_install 0 && show_v2node_version 0 ;;
         "update_shell") update_shell ;;
