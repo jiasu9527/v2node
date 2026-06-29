@@ -157,3 +157,20 @@ func TestJuicityExternalProcessUsesRunConfigCommand(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestRenderJuicityConfigIncludesObserverLogPath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
+	node := &panel.NodeInfo{Id: 7, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity", ServerPort: 443}}
+	raw, err := RenderJuicityConfig(node, []panel.UserInfo{{Id: 1, Uuid: "user-uuid"}})
+	if err != nil {
+		t.Fatalf("RenderJuicityConfig() error = %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if cfg["v2node_observer_log"] != filepath.Join(tmp, "external-juicity-7.observe.jsonl") {
+		t.Fatalf("v2node_observer_log = %#v", cfg["v2node_observer_log"])
+	}
+}

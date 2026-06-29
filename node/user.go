@@ -98,6 +98,9 @@ func (c *Controller) reportSensitiveAccessTask(ctx context.Context) (err error) 
 	if c.info == nil || c.info.Common == nil || c.info.Common.SensitiveAudit == nil || !c.info.Common.SensitiveAudit.Enable {
 		return nil
 	}
+	if isExternalNode(c.info) {
+		return c.reportExternalSensitiveAccessTask(ctx)
+	}
 	events := c.server.GetSensitiveAccessSlice(c.tag)
 	if len(events) == 0 {
 		return nil

@@ -88,11 +88,15 @@ func TestMieruTrafficCollectorHonorsMinTrafficKilobytes(t *testing.T) {
 	}
 }
 
-func TestJuicityTrafficCollectorReturnsUnsupported(t *testing.T) {
+func TestJuicityTrafficCollectorWithoutObserverLogReturnsEmpty(t *testing.T) {
+	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", t.TempDir())
 	collector := NewExternalTrafficCollector(&panel.NodeInfo{Id: 7, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity"}})
-	_, err := collector.CollectTraffic([]panel.UserInfo{{Id: 1, Uuid: "uuid"}}, 0)
-	if err == nil {
-		t.Fatal("CollectTraffic() error = nil, want unsupported error")
+	got, err := collector.CollectTraffic([]panel.UserInfo{{Id: 1, Uuid: "uuid"}}, 0)
+	if err != nil {
+		t.Fatalf("CollectTraffic() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("CollectTraffic() = %#v, want empty without observer log", got)
 	}
 }
 
@@ -114,5 +118,57 @@ func TestMieruTrafficCollectorOnlineKeepsTrafficBaselineForLaterReport(t *testin
 	traffic := collector.deltaTraffic(snapshots, 0)
 	if len(traffic) != 1 || traffic[0].Upload != 300 || traffic[0].Download != 400 {
 		t.Fatalf("deltaTraffic after online = %#v, want unchanged traffic delta", traffic)
+	}
+}
+
+func TestJuicityObserverLogReportsTrafficAndOnline(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
+	node := &panel.NodeInfo{Id: 7, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity"}}
+	collector := NewExternalTrafficCollector(node)
+	users := []panel.UserInfo{{Id: 1001, Uuid: "uuid-1001"}}
+	logPath := ExternalObservabilityLogPath(node)
+	if err := os.WriteFile(logPath, []byte(`{"type":"traffic","uuid":"uuid-1001","upload":1234,"download":5678,"client_ip":"203.0.113.9"}`+"\n"), 0644); err != nil {
+		t.Fatalf("write observer log: %v", err)
+	}
+
+	traffic, err := collector.CollectTraffic(users, 0)
+	if err != nil {
+		t.Fatalf("CollectTraffic() error = %v", err)
+	}
+	if len(traffic) != 1 || traffic[0].UID != 1001 || traffic[0].Upload != 1234 || traffic[0].Download != 5678 {
+		t.Fatalf("CollectTraffic() = %#v, want uid 1001 up/down", traffic)
+	}
+	online, err := collector.CollectOnlineUsers(users, 0)
+	if err != nil {
+		t.Fatalf("CollectOnlineUsers() error = %v", err)
+	}
+	if len(online) != 1 || online[0].UID != 1001 || online[0].IP != "203.0.113.9" {
+		t.Fatalf("CollectOnlineUsers() = %#v, want uid 1001 ip", online)
+	}
+
+	traffic, err = collector.CollectTraffic(users, 0)
+	if err != nil || len(traffic) != 0 {
+		t.Fatalf("second CollectTraffic() = %#v, err=%v; want no duplicate", traffic, err)
+	}
+}
+
+func TestJuicityObserverLogReportsSensitiveEvents(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
+	node := &panel.NodeInfo{Id: 7, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity"}}
+	collector := NewExternalTrafficCollector(node)
+	users := []panel.UserInfo{{Id: 1001, Uuid: "uuid-1001"}}
+	line := `{"type":"access","uuid":"uuid-1001","domain":"blocked.example","rule":"suffix:example","client_ip":"203.0.113.9","count":2,"first_at":11,"last_at":22}` + "\n"
+	if err := os.WriteFile(ExternalObservabilityLogPath(node), []byte(line), 0644); err != nil {
+		t.Fatalf("write observer log: %v", err)
+	}
+
+	events, err := collector.CollectSensitiveAccess(users)
+	if err != nil {
+		t.Fatalf("CollectSensitiveAccess() error = %v", err)
+	}
+	if len(events) != 1 || events[0].UserID != 1001 || events[0].Domain != "blocked.example" || events[0].ClientIP != "203.0.113.9" || events[0].Count != 2 {
+		t.Fatalf("CollectSensitiveAccess() = %#v, want one event", events)
 	}
 }

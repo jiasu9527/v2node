@@ -158,3 +158,37 @@ func TestReportOnlineUsersTaskUsesMieruExternalMetrics(t *testing.T) {
 		t.Fatalf("alive body for uid 1001 = %#v, want external:mieru", got)
 	}
 }
+
+func TestReportSensitiveAccessTaskUsesJuicityObserverLog(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("V2NODE_EXTERNAL_CONFIG_DIR", tmp)
+	reports := make([][]panel.SensitiveAccessEvent, 0)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/server/UniProxy/sensitive" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		var body []panel.SensitiveAccessEvent
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode sensitive body: %v", err)
+		}
+		reports = append(reports, body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	api, err := panel.New(&conf.NodeConfig{APIHost: srv.URL, NodeID: 7, Key: "secret"})
+	if err != nil {
+		t.Fatalf("panel.New() error = %v", err)
+	}
+	info := &panel.NodeInfo{Id: 7, Type: "juicity", Tag: "external-juicity:7", Common: &panel.CommonNode{Protocol: "juicity", ExternalProtocol: true, TrafficMode: "observer", SensitiveAudit: &panel.SensitiveAuditConfig{Enable: true}}}
+	controller := &Controller{apiClient: api, info: info, tag: info.Tag, userList: []panel.UserInfo{{Id: 1001, Uuid: "uuid-1001"}}, externalTrafficCollector: core.NewExternalTrafficCollector(info)}
+	line := `{"type":"access","uuid":"uuid-1001","domain":"blocked.example","rule":"suffix:example","client_ip":"203.0.113.9","count":1}` + "\n"
+	if err := os.WriteFile(core.ExternalObservabilityLogPath(info), []byte(line), 0644); err != nil {
+		t.Fatalf("write observer log: %v", err)
+	}
+	if err := controller.reportSensitiveAccessTask(context.Background()); err != nil {
+		t.Fatalf("reportSensitiveAccessTask() error = %v", err)
+	}
+	if len(reports) != 1 || len(reports[0]) != 1 || reports[0][0].UserID != 1001 || reports[0][0].Domain != "blocked.example" {
+		t.Fatalf("sensitive reports = %#v, want one event", reports)
+	}
+}

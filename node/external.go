@@ -128,3 +128,32 @@ func (c *Controller) reportExternalOnlineUsersTask(ctx context.Context) error {
 	log.WithField("tag", c.tag).Infof("Report %d external online UIDs", len(data))
 	return nil
 }
+
+func (c *Controller) reportExternalSensitiveAccessTask(ctx context.Context) error {
+	if c.externalTrafficCollector == nil {
+		c.externalTrafficCollector = core.NewExternalTrafficCollector(c.info)
+	}
+	events, err := c.externalTrafficCollector.CollectSensitiveAccess(c.userList)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Debug("Skip external sensitive access report")
+		return nil
+	}
+	if len(events) == 0 {
+		return nil
+	}
+	if err := c.apiClient.ReportSensitiveAccess(ctx, events); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Report external sensitive access failed")
+		return nil
+	}
+	log.WithField("tag", c.tag).Infof("Report %d external sensitive access events", len(events))
+	return nil
+}

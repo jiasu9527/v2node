@@ -35,11 +35,12 @@ func RenderJuicityConfig(node *panel.NodeInfo, users []panel.UserInfo) ([]byte, 
 		userMap[user.Uuid] = user.Uuid
 	}
 	cfg := map[string]any{
-		"listen":             fmt.Sprintf(":%d", node.Common.ServerPort),
-		"certificate":        node.Common.CertInfoFile(),
-		"private_key":        node.Common.CertKeyFile(),
-		"congestion_control": firstNonEmpty(node.Common.CongestionControl, "bbr"),
-		"users":              userMap,
+		"listen":              fmt.Sprintf(":%d", node.Common.ServerPort),
+		"certificate":         node.Common.CertInfoFile(),
+		"private_key":         node.Common.CertKeyFile(),
+		"congestion_control":  firstNonEmpty(node.Common.CongestionControl, "bbr"),
+		"users":               userMap,
+		"v2node_observer_log": ExternalObservabilityLogPath(node),
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
