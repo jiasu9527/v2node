@@ -101,7 +101,7 @@ func (c *ExternalTrafficCollector) CollectOnlineUsers(users []panel.UserInfo, mi
 	switch c.protocol {
 	case "mieru":
 		snapshots, err = c.collectMieruTraffic(users)
-	case "juicity":
+	case "juicity", "naive":
 		snapshots = c.collectEmbeddedTraffic(users)
 		if len(snapshots) > 0 {
 			return c.deltaOnlineUsers(snapshots, minTrafficKB), nil
@@ -122,8 +122,17 @@ func (c *ExternalTrafficCollector) CollectSensitiveAccess(users []panel.UserInfo
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.protocol != "juicity" {
+	if c.protocol != "juicity" && c.protocol != "naive" {
 		return nil, fmt.Errorf("%w: %s", ErrExternalTrafficUnsupported, c.protocol)
+	}
+	uidByUUID := make(map[string]int, len(users))
+	for _, user := range users {
+		if strings.TrimSpace(user.Uuid) != "" {
+			uidByUUID[user.Uuid] = user.Id
+		}
+	}
+	if events := globalEmbeddedTraffic.drainAccess(c.nodeID, uidByUUID); len(events) > 0 {
+		return events, nil
 	}
 	if err := c.loadObserverEvents(); err != nil {
 		return nil, err
@@ -174,7 +183,7 @@ func (c *ExternalTrafficCollector) CollectTraffic(users []panel.UserInfo, minTra
 	switch c.protocol {
 	case "mieru":
 		snapshots, err = c.collectMieruTraffic(users)
-	case "juicity":
+	case "juicity", "naive":
 		snapshots = c.collectEmbeddedTraffic(users)
 		if len(snapshots) > 0 {
 			return c.deltaTraffic(snapshots, minTrafficKB), nil

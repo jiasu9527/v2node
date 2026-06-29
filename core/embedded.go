@@ -40,6 +40,8 @@ func NewEmbeddedProtocolServer(node *panel.NodeInfo, users []panel.UserInfo) (Em
 		return newEmbeddedMieruServer(node, users)
 	case "juicity":
 		return newEmbeddedJuicityServer(node, users)
+	case "naive":
+		return newEmbeddedNaiveServer(node, users)
 	default:
 		return nil, fmt.Errorf("unsupported embedded protocol: %s", protocol)
 	}

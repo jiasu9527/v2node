@@ -148,3 +148,54 @@ func TestJuicityEmbeddedTrafficRegistryFeedsCollector(t *testing.T) {
 		t.Fatalf("second CollectTraffic() = %#v, want uid=7001 up=300 down=400", got)
 	}
 }
+
+func TestJuicityEmbeddedAccessRegistryFeedsCollector(t *testing.T) {
+	node := &panel.NodeInfo{Id: 708, Type: "juicity", Common: &panel.CommonNode{Protocol: "juicity"}}
+	collector := NewExternalTrafficCollector(node)
+	users := []panel.UserInfo{{Id: 7002, Uuid: "22222222-2222-2222-2222-222222222222"}}
+	observer := embeddedTrafficObserver{nodeID: node.Id}
+
+	observer.AddAccess(users[0].Uuid, "blocked.example", "tcp", "203.0.113.8")
+	got, err := collector.CollectSensitiveAccess(users)
+	if err != nil {
+		t.Fatalf("CollectSensitiveAccess() error = %v", err)
+	}
+	if len(got) != 1 || got[0].UserID != 7002 || got[0].Domain != "blocked.example" || got[0].Rule != "embedded:tcp" || got[0].ClientIP != "203.0.113.8" {
+		t.Fatalf("CollectSensitiveAccess() = %#v", got)
+	}
+	got, err = collector.CollectSensitiveAccess(users)
+	if err != nil {
+		t.Fatalf("second CollectSensitiveAccess() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("second CollectSensitiveAccess() = %#v, want drained", got)
+	}
+}
+
+func waitTCPPortBusy(t *testing.T, port int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)), 50*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("tcp port %d did not become busy", port)
+}
+
+func waitTCPPortFree(t *testing.T, port int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)))
+		if err == nil {
+			_ = l.Close()
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("tcp port %d was not released", port)
+}

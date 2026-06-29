@@ -46,6 +46,7 @@ var (
 
 type Observer interface {
 	AddTraffic(uuid string, upload int64, download int64, clientIP string)
+	AddAccess(uuid string, domain string, network string, clientIP string)
 }
 
 type Options struct {
@@ -369,10 +370,14 @@ func (s *Server) handleStream(ctx context.Context, authCtx context.Context, conn
 	switch mdata.Network {
 	case "tcp":
 		target := net.JoinHostPort(mdata.Hostname, strconv.Itoa(int(mdata.Port)))
+		if s.observer != nil {
+			s.observer.AddAccess(userUUID, mdata.Hostname, "tcp", source)
+		}
 		s.logger.Debug().
 			Str("target", target).
 			Str("source", source).
 			Msg("juicity received a [tcp] request")
+
 		magicNetwork := netproxy.MagicNetwork{
 			Network: "tcp",
 			Mark:    uint32(s.fwmark),
@@ -415,6 +420,9 @@ func (s *Server) handleStream(ctx context.Context, authCtx context.Context, conn
 		n, addr, err := lConn.ReadFrom(buf)
 		if err != nil {
 			return fmt.Errorf("ReadFrom: %w", err)
+		}
+		if s.observer != nil {
+			s.observer.AddAccess(userUUID, addr.Addr().String(), "udp", source)
 		}
 
 		magicNetwork := netproxy.MagicNetwork{

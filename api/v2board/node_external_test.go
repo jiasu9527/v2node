@@ -11,7 +11,7 @@ import (
 )
 
 func TestGetNodeInfoAcceptsExternalProtocols(t *testing.T) {
-	for _, protocol := range []string{"juicity", "mieru"} {
+	for _, protocol := range []string{"juicity", "mieru", "naive"} {
 		t.Run(protocol, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/v2/server/config" {

@@ -8,7 +8,7 @@ import (
 
 func TestNewEmbeddedProtocolServerDoesNotRequireExternalBinary(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	for _, protocol := range []string{"juicity", "mieru"} {
+	for _, protocol := range []string{"juicity", "mieru", "naive"} {
 		t.Run(protocol, func(t *testing.T) {
 			node := &panel.NodeInfo{Id: 9, Type: protocol, Common: &panel.CommonNode{Protocol: protocol, ExternalProtocol: true, ServerPort: 0}}
 			server, err := NewEmbeddedProtocolServer(node, []panel.UserInfo{{Id: 1, Uuid: "11111111-1111-1111-1111-111111111111"}})

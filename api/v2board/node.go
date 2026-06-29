@@ -268,7 +268,7 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 
 func IsExternalProtocol(protocol string) bool {
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
-	case "juicity", "mieru":
+	case "juicity", "mieru", "naive":
 		return true
 	default:
 		return false
