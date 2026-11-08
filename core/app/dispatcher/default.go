@@ -284,11 +284,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	ob := outbounds[len(outbounds)-1]
 	ob.OriginalTarget = destination
 	ob.Target = destination
-	content := session.ContentFromContext(ctx)
-	if content == nil {
-		content = new(session.Content)
-		ctx = session.ContextWithContent(ctx, content)
-	}
+	ctx, content := contextWithDispatchContent(ctx)
 	sniffingRequest := content.SniffingRequest
 	inbound, outbound, _, err := d.getLink(ctx, destination.Network)
 	if err != nil {
@@ -347,11 +343,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 	ob := outbounds[len(outbounds)-1]
 	ob.OriginalTarget = destination
 	ob.Target = destination
-	content := session.ContentFromContext(ctx)
-	if content == nil {
-		content = new(session.Content)
-		ctx = session.ContextWithContent(ctx, content)
-	}
+	ctx, content := contextWithDispatchContent(ctx)
 
 	sessionInbound := session.InboundFromContext(ctx)
 	var user *protocol.MemoryUser
