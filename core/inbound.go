@@ -110,6 +110,8 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 	sniffingConfig := &coreConf.SniffingConfig{
 		Enabled:      true,
 		DestOverride: coreConf.StringList{"http", "tls", "quic"},
+		// Sniffed SNI/Host selects routes, but must not replace a chained proxy's address.
+		RouteOnly:    true,
 	}
 	in.SniffingConfig = sniffingConfig
 
