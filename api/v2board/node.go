@@ -192,6 +192,7 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 		R().
 		SetContext(ctx).
 		SetHeader("If-None-Match", c.nodeEtag).
+		SetHeader("X-Observation-Capability", "all-v1").
 		ForceContentType("application/json").
 		Get(path)
 	if err != nil {

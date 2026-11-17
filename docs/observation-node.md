@@ -15,6 +15,9 @@ The panel issues a distinct 64-character observation token. Install it in the
 node's local config as `ObservationToken`; it is **not** the ordinary `ApiKey`
 and must not appear in the panel's node config response. The node sends it in
 `X-Observation-Token` to `/api/v1/server/UniProxy/observation`.
+This node advertises `X-Observation-Capability: all-v1` when fetching its
+configuration. The panel rejects all-user config requests from older nodes
+without that header so an empty list cannot be mistaken for revoking users.
 
 When enabled, the Xray dispatcher reports one metadata event per authenticated
 routing attempt: user ID, time, source IP, visible target hostname or target

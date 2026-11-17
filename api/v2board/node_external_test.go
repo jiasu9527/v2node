@@ -47,6 +47,9 @@ func TestGetNodeInfoParsesDedicatedObservationAllowlist(t *testing.T) {
 		if r.URL.Path != "/api/v2/server/config" {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
+		if r.Header.Get("X-Observation-Capability") != "all-v1" {
+			t.Errorf("missing all-user capability header: %q", r.Header.Get("X-Observation-Capability"))
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"protocol":"anytls","server_port":443,"base_config":{"push_interval":60,"pull_interval":60},"observation_audit":{"enable":true,"allowed_user_ids":[10,20],"report_interval":45}}`))
 	}))
