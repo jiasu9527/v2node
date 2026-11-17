@@ -120,7 +120,7 @@ func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 		}).Error("Get user list failed")
 		return nil
 	}
-	if len(newU) > 0 && observationEnabled(c.info) {
+	if newU != nil && observationEnabled(c.info) {
 		newU, err = filterObservationUsers(c.info, newU)
 		if err != nil {
 			log.WithFields(log.Fields{"tag": c.tag, "err": err}).Error("Observation allowlist rejected user refresh")
@@ -145,7 +145,7 @@ func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 		c.limiter.AliveList = newA
 	}
 	// node no changed, check users
-	if len(newU) == 0 {
+	if newU == nil {
 		log.WithField("tag", c.tag).Debug("User list no change")
 		return nil
 	}

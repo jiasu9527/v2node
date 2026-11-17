@@ -52,7 +52,9 @@ func (c *Client) GetUserList(ctx context.Context) ([]UserInfo, error) {
 	if r.StatusCode() == 304 {
 		return nil, nil
 	}
-	userlist := &UserListBody{}
+	// A successful 200 with an empty users array must not be confused with
+	// 304 (no change): nodes must revoke their last authenticated user.
+	userlist := &UserListBody{Users: []UserInfo{}}
 	if strings.Contains(r.Header().Get("Content-Type"), "application/x-msgpack") {
 		decoder := msgpack.NewDecoder(r.RawResponse.Body)
 		if err := decoder.Decode(userlist); err != nil {
@@ -87,6 +89,9 @@ func (c *Client) GetUserList(ctx context.Context) ([]UserInfo, error) {
 			}
 			userlist.Users = append(userlist.Users, u)
 		}
+	}
+	if userlist.Users == nil {
+		userlist.Users = []UserInfo{}
 	}
 	c.userEtag = r.Header().Get("ETag")
 	return userlist.Users, nil

@@ -43,9 +43,6 @@ func filterObservationUsers(info *panel.NodeInfo, users []panel.UserInfo) ([]pan
 			filtered = append(filtered, user)
 		}
 	}
-	if len(filtered) == 0 {
-		return nil, errors.New("observation allowlist has no active users")
-	}
 	return filtered, nil
 }
 
@@ -89,8 +86,24 @@ func (c *Controller) flushPendingObservation(ctx context.Context, report func(co
 			batchSize = maxObservationReportBatch
 		}
 		if err := report(ctx, c.pendingObservation[:batchSize]); err != nil {
-			// Keep the same event IDs and retry later. The panel deduplicates IDs.
-			return err
+			if !errors.Is(err, panel.ErrObservationInvalidBatch) {
+				// Keep stable IDs and retry network/server errors later.
+				return err
+			}
+			// A 400 invalidates the entire batch. Isolate bad events so one
+			// expired or malformed record cannot block newer valid records.
+			for len(c.pendingObservation) > 0 && batchSize > 0 {
+				one := c.pendingObservation[0]
+				if singleErr := report(ctx, []panel.ObservationEvent{one}); singleErr != nil {
+					if !errors.Is(singleErr, panel.ErrObservationInvalidBatch) {
+						return singleErr
+					}
+					log.WithFields(log.Fields{"tag": c.tag, "event_id": one.EventID}).Warn("Dropped invalid observation event")
+				}
+				c.pendingObservation = c.pendingObservation[1:]
+				batchSize--
+			}
+			continue
 		}
 		c.pendingObservation = c.pendingObservation[batchSize:]
 	}

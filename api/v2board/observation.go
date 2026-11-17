@@ -2,12 +2,15 @@ package panel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/go-resty/resty/v2"
 )
+
+var ErrObservationInvalidBatch = errors.New("observation batch rejected as invalid")
 
 // ObservationEvent reports destination metadata only. Result=route_attempt
 // means the proxy accepted a routed request, not that a website was reached.
@@ -46,6 +49,9 @@ func (c *Client) ReportObservation(ctx context.Context, events []ObservationEven
 		return fmt.Errorf("report observation failed: received nil response")
 	}
 	if r.IsError() {
+		if r.StatusCode() == 400 {
+			return fmt.Errorf("%w: status %d", ErrObservationInvalidBatch, r.StatusCode())
+		}
 		return fmt.Errorf("report observation failed: status %d", r.StatusCode())
 	}
 	return nil

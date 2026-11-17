@@ -24,6 +24,10 @@ func TestFilterObservationUsers(t *testing.T) {
 	if got, err := filterObservationUsers(observed, users); err == nil || got != nil {
 		t.Fatal("empty allowlist did not fail closed")
 	}
+	observed.Common.ObservationAudit.AllowedUserIDs = []int{3}
+	if got, err := filterObservationUsers(observed, users); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("all revoked users must produce a real empty list: %#v %v", got, err)
+	}
 }
 
 func TestObservationRetryKeepsEventIDs(t *testing.T) {
@@ -56,5 +60,25 @@ func TestObservationRetryKeepsEventIDs(t *testing.T) {
 	}
 	if len(sizes) != 3 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 5 {
 		t.Fatalf("wrong batch sizes: %#v", sizes)
+	}
+}
+
+func TestObservationInvalidBatchDoesNotBlockLaterEvents(t *testing.T) {
+	c := new(Controller)
+	c.appendPendingObservation([]panel.ObservationEvent{{EventID: "good-1"}, {EventID: "bad"}, {EventID: "good-2"}})
+	var accepted []string
+	err := c.flushPendingObservation(context.Background(), func(_ context.Context, batch []panel.ObservationEvent) error {
+		for _, event := range batch {
+			if event.EventID == "bad" {
+				return panel.ErrObservationInvalidBatch
+			}
+		}
+		for _, event := range batch {
+			accepted = append(accepted, event.EventID)
+		}
+		return nil
+	})
+	if err != nil || len(c.pendingObservation) != 0 || len(accepted) != 2 || accepted[0] != "good-1" || accepted[1] != "good-2" {
+		t.Fatalf("invalid event blocked queue: err=%v pending=%d accepted=%#v", err, len(c.pendingObservation), accepted)
 	}
 }
