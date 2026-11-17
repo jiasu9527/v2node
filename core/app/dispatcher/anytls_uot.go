@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/sagernet/sing/common/uot"
+	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/session"
@@ -275,3 +276,10 @@ func parseAnyTLSUoTPacketDestination(raw []byte) (net.Destination, int, bool) {
 	}
 	return target, headerLen, true
 }
+
+// Preserve pipe lifecycle through the framing layer. Do not mutate pending here:
+// Close/Interrupt may race with a blocked WriteMultiBuffer.
+func (w *anyTLSUoTDecodeWriter) Close() error { return common.Close(w.writer) }
+func (w *anyTLSUoTDecodeWriter) Interrupt()   { common.Interrupt(w.writer) }
+func (w *anyTLSUoTEncodeWriter) Close() error { return common.Close(w.writer) }
+func (w *anyTLSUoTEncodeWriter) Interrupt()   { common.Interrupt(w.writer) }
