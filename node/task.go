@@ -53,6 +53,16 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		log.WithField("tag", c.tag).Info("Start report sensitive access")
 		_ = c.sensitiveReportPeriodic.Start(false)
 	}
+	if observationEnabled(node) {
+		c.observationReportPeriodic = &task.Task{
+			Name:     "reportObservationTask",
+			Interval: node.Common.ObservationAudit.ReportIntervalDuration(),
+			Execute:  c.reportObservationTask,
+			ReloadCh: c.server.ReloadCh,
+		}
+		log.WithField("tag", c.tag).Info("Start report observation")
+		_ = c.observationReportPeriodic.Start(false)
+	}
 	if node.Security == panel.Tls {
 		switch c.info.Common.CertInfo.CertMode {
 		case "none", "", "file", "self":
@@ -110,6 +120,13 @@ func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 		}).Error("Get user list failed")
 		return nil
 	}
+	if newU != nil && observationConfigured(c.info) {
+		newU, err = filterObservationUsers(c.info, newU)
+		if err != nil {
+			log.WithFields(log.Fields{"tag": c.tag, "err": err}).Error("Observation allowlist rejected user refresh")
+			return nil
+		}
+	}
 	// get user alive
 	newA, err := c.apiClient.GetUserAlive(ctx)
 	if err != nil {
@@ -128,7 +145,7 @@ func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 		c.limiter.AliveList = newA
 	}
 	// node no changed, check users
-	if len(newU) == 0 {
+	if newU == nil {
 		log.WithField("tag", c.tag).Debug("User list no change")
 		return nil
 	}

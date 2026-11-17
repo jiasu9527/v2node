@@ -32,16 +32,17 @@ type NodeInfo struct {
 }
 
 type CommonNode struct {
-	Protocol         string                `json:"protocol"`
-	ExternalProtocol bool                  `json:"external_protocol"`
-	TrafficMode      string                `json:"traffic_mode"`
-	PasswordMode     string                `json:"password_mode"`
-	ListenIP         string                `json:"listen_ip"`
-	SendThrough      string                `json:"send_through,omitempty"`
-	ServerPort       int                   `json:"server_port"`
-	Routes           []Route               `json:"routes"`
-	BaseConfig       *BaseConfig           `json:"base_config"`
-	SensitiveAudit   *SensitiveAuditConfig `json:"sensitive_audit"`
+	Protocol         string                  `json:"protocol"`
+	ExternalProtocol bool                    `json:"external_protocol"`
+	TrafficMode      string                  `json:"traffic_mode"`
+	PasswordMode     string                  `json:"password_mode"`
+	ListenIP         string                  `json:"listen_ip"`
+	SendThrough      string                  `json:"send_through,omitempty"`
+	ServerPort       int                     `json:"server_port"`
+	Routes           []Route                 `json:"routes"`
+	BaseConfig       *BaseConfig             `json:"base_config"`
+	SensitiveAudit   *SensitiveAuditConfig   `json:"sensitive_audit"`
+	ObservationAudit *ObservationAuditConfig `json:"observation_audit"`
 	//vless vmess trojan
 	Tls                int         `json:"tls"`
 	TlsSettings        TlsSettings `json:"tls_settings"`
@@ -113,6 +114,28 @@ type SensitiveAuditConfig struct {
 	LogClientIP    bool     `json:"log_client_ip"`
 }
 
+// ObservationAuditConfig controls destination metadata collection. New
+// Xray-backed nodes default to all-user mode when the panel omits this field;
+// an explicit enable=false still disables collection. Absent mode on an
+// explicit config preserves the legacy dedicated-node allowlist behavior.
+type ObservationAuditConfig struct {
+	Enable         bool   `json:"enable"`
+	Mode           string `json:"mode"`
+	ReportInterval any    `json:"report_interval"`
+	AllowedUserIDs []int  `json:"allowed_user_ids"`
+}
+
+func (c *ObservationAuditConfig) ReportIntervalDuration() time.Duration {
+	if c == nil || c.ReportInterval == nil {
+		return time.Minute
+	}
+	d := intervalToTime(c.ReportInterval)
+	if d <= 0 {
+		return time.Minute
+	}
+	return d
+}
+
 func (c *SensitiveAuditConfig) ReportIntervalDuration() time.Duration {
 	if c == nil {
 		return time.Minute
@@ -170,6 +193,7 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 		R().
 		SetContext(ctx).
 		SetHeader("If-None-Match", c.nodeEtag).
+		SetHeader("X-Observation-Capability", "auto-v2").
 		ForceContentType("application/json").
 		Get(path)
 	if err != nil {
@@ -227,6 +251,12 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 		node.Security = 0
 	default:
 		return nil, fmt.Errorf("unsupport protocol: %s", cm.Protocol)
+	}
+	// Updating v2node is sufficient to start reporting authenticated Xray
+	// routing attempts. Do not invent coverage for embedded protocols, which
+	// do not pass through the Xray dispatcher used by this collector.
+	if cm.ObservationAudit == nil && !cm.ExternalProtocol {
+		cm.ObservationAudit = &ObservationAuditConfig{Enable: true, Mode: "all"}
 	}
 	node.Tag = fmt.Sprintf("[%s]-%s:%d", c.APIHost, node.Type, node.Id)
 	cf := cm.TlsSettings.CertFile

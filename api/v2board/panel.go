@@ -18,6 +18,7 @@ type Client struct {
 	client           *resty.Client
 	APIHost          string
 	Token            string
+	ObservationToken string
 	NodeId           int
 	nodeEtag         string
 	userEtag         string
@@ -55,11 +56,12 @@ func New(c *conf.NodeConfig) (*Client, error) {
 		"token":     c.Key,
 	})
 	return &Client{
-		client:   client,
-		Token:    c.Key,
-		APIHost:  c.APIHost,
-		NodeId:   c.NodeID,
-		UserList: &UserListBody{},
-		AliveMap: &AliveMap{},
+		client:           client,
+		Token:            c.Key,
+		ObservationToken: c.ObservationToken,
+		APIHost:          c.APIHost,
+		NodeId:           c.NodeID,
+		UserList:         &UserListBody{},
+		AliveMap:         &AliveMap{},
 	}, nil
 }

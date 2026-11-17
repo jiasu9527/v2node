@@ -100,15 +100,16 @@ func (r *cachedReader) Interrupt() {
 
 // DefaultDispatcher is a default implementation of Dispatcher.
 type DefaultDispatcher struct {
-	ohm             outbound.Manager
-	router          routing.Router
-	policy          policy.Manager
-	stats           stats.Manager
-	fdns            dns.FakeDNSEngine
-	Counter         sync.Map
-	LinkManagers    sync.Map // map[string]*LinkManager
-	SensitiveAudits sync.Map
-	SensitiveEvents sync.Map
+	ohm               outbound.Manager
+	router            routing.Router
+	policy            policy.Manager
+	stats             stats.Manager
+	fdns              dns.FakeDNSEngine
+	Counter           sync.Map
+	LinkManagers      sync.Map // map[string]*LinkManager
+	SensitiveAudits   sync.Map
+	SensitiveEvents   sync.Map
+	ObservationAudits sync.Map
 }
 
 func init() {
@@ -285,6 +286,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	}
 	wrapAnyTLSUoTLinks(ctx, destination.Network, inbound, outbound)
 	if !sniffingRequest.Enabled {
+		d.RecordObservationFromContext(ctx, destination, "")
 		go d.routedDispatch(ctx, outbound, destination)
 	} else {
 		go func() {
@@ -299,6 +301,11 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 					d.RecordSensitiveAccessFromContext(ctx, domain)
 				}
 			}
+			sniffedDomain := ""
+			if err == nil {
+				sniffedDomain = result.Domain()
+			}
+			d.RecordObservationFromContext(ctx, destination, sniffedDomain)
 			if err == nil && d.shouldOverride(ctx, result, sniffingRequest, destination) {
 				domain := result.Domain()
 				errors.LogInfo(ctx, "sniffed domain: ", domain)
@@ -398,6 +405,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 
 	sniffingRequest := content.SniffingRequest
 	if !sniffingRequest.Enabled {
+		d.RecordObservationFromContext(ctx, destination, "")
 		d.routedDispatch(ctx, outbound, destination)
 	} else {
 		cReader := &cachedReader{
@@ -411,6 +419,11 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 				d.RecordSensitiveAccessFromContext(ctx, domain)
 			}
 		}
+		sniffedDomain := ""
+		if err == nil {
+			sniffedDomain = result.Domain()
+		}
+		d.RecordObservationFromContext(ctx, destination, sniffedDomain)
 		if err == nil && d.shouldOverride(ctx, result, sniffingRequest, destination) {
 			domain := result.Domain()
 			errors.LogInfo(ctx, "sniffed domain: ", domain)

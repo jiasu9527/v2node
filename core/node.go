@@ -16,11 +16,13 @@ func (v *V2Core) AddNode(tag string, info *panel.NodeInfo) error {
 		return fmt.Errorf("add inbound error: %s", err)
 	}
 	v.configureSensitiveAudit(tag, info)
+	v.configureObservationAudit(tag, info)
 	return nil
 }
 
 func (v *V2Core) DelNode(tag string) error {
 	v.disableSensitiveAudit(tag)
+	v.disableObservationAudit(tag)
 	err := v.removeInbound(tag)
 	if err != nil {
 		return fmt.Errorf("remove in error: %s", err)

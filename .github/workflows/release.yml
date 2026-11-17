@@ -40,6 +40,8 @@ jobs:
         run: go test ./...
       - name: Dispatcher and AnyTLS lifecycle race regression tests
         run: go test -race ./core/app/dispatcher github.com/xtls/xray-core/proxy/anytls -count=20
+      - name: Reporting and routing compatibility regression tests
+        run: go test -race ./api/v2board ./node ./core -run 'Observation|GetUserListDistinguishes|InboundSniffingPreserves' -count=20
 
   build:
     needs: test
