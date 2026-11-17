@@ -32,14 +32,14 @@ func (c *Client) ReportObservation(ctx context.Context, events []ObservationEven
 	if len(events) == 0 {
 		return nil
 	}
-	// The ordinary panel client carries a shared server token in its default
-	// query parameters. Use an isolated client so that token is never sent to
-	// this endpoint (or captured in URL access logs).
+	// The ordinary panel client carries the ApiKey in its default query
+	// parameters. Use an isolated client so the same key is sent only in an
+	// authorization header, never in this endpoint's URL/access logs.
 	client := resty.New().SetBaseURL(c.APIHost).SetTimeout(15 * time.Second).SetRetryCount(1)
 	const path = "/api/v1/server/UniProxy/observation"
 	r, err := client.R().SetContext(ctx).
 		SetQueryParams(map[string]string{"node_type": "v2node", "node_id": strconv.Itoa(c.NodeId)}).
-		SetHeader("X-Observation-Token", c.ObservationToken).
+		SetHeader("X-Server-Token", c.Token).
 		SetBody(map[string]any{"events": events}).
 		ForceContentType("application/json").Post(path)
 	if err != nil {

@@ -114,9 +114,10 @@ type SensitiveAuditConfig struct {
 	LogClientIP    bool     `json:"log_client_ip"`
 }
 
-// ObservationAuditConfig is deliberately opt-in per node. Mode "all" records
-// every authenticated user of that node without changing its user list;
-// absent mode preserves the legacy dedicated-node allowlist behavior.
+// ObservationAuditConfig controls destination metadata collection. New
+// Xray-backed nodes default to all-user mode when the panel omits this field;
+// an explicit enable=false still disables collection. Absent mode on an
+// explicit config preserves the legacy dedicated-node allowlist behavior.
 type ObservationAuditConfig struct {
 	Enable         bool   `json:"enable"`
 	Mode           string `json:"mode"`
@@ -192,7 +193,7 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 		R().
 		SetContext(ctx).
 		SetHeader("If-None-Match", c.nodeEtag).
-		SetHeader("X-Observation-Capability", "all-v1").
+		SetHeader("X-Observation-Capability", "auto-v2").
 		ForceContentType("application/json").
 		Get(path)
 	if err != nil {
@@ -250,6 +251,12 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 		node.Security = 0
 	default:
 		return nil, fmt.Errorf("unsupport protocol: %s", cm.Protocol)
+	}
+	// Updating v2node is sufficient to start reporting authenticated Xray
+	// routing attempts. Do not invent coverage for embedded protocols, which
+	// do not pass through the Xray dispatcher used by this collector.
+	if cm.ObservationAudit == nil && !cm.ExternalProtocol {
+		cm.ObservationAudit = &ObservationAuditConfig{Enable: true, Mode: "all"}
 	}
 	node.Tag = fmt.Sprintf("[%s]-%s:%d", c.APIHost, node.Type, node.Id)
 	cf := cm.TlsSettings.CertFile

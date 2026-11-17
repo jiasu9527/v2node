@@ -10,12 +10,12 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-func TestReportObservationUsesDedicatedTokenAndStablePayload(t *testing.T) {
-	token := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+func TestReportObservationUsesNodeApiKeyHeaderAndStablePayload(t *testing.T) {
+	token := "node-api-key-only-in-header"
 	var got ObservationEvent
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/server/UniProxy/observation" || r.Header.Get("X-Observation-Token") != token {
-			t.Errorf("wrong endpoint or token header: %q %q", r.URL.Path, r.Header.Get("X-Observation-Token"))
+		if r.URL.Path != "/api/v1/server/UniProxy/observation" || r.Header.Get("X-Server-Token") != token || r.Header.Get("X-Observation-Token") != "" {
+			t.Errorf("wrong endpoint or token header: %q %q", r.URL.Path, r.Header.Get("X-Server-Token"))
 		}
 		if r.URL.Query().Get("token") != "" || r.URL.Query().Get("node_type") != "v2node" || r.URL.Query().Get("node_id") != "7" {
 			t.Errorf("observation query leaked the shared token or lost node identity: %q", r.URL.RawQuery)
@@ -32,7 +32,7 @@ func TestReportObservationUsesDedicatedTokenAndStablePayload(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{"inserted":1}}`))
 	}))
 	defer srv.Close()
-	c := &Client{client: resty.New().SetBaseURL(srv.URL).SetQueryParam("token", "shared-secret-must-not-leak"), APIHost: srv.URL, NodeId: 7, ObservationToken: token}
+	c := &Client{client: resty.New().SetBaseURL(srv.URL).SetQueryParam("token", "shared-secret-must-not-leak"), APIHost: srv.URL, NodeId: 7, Token: token, ObservationToken: "legacy-token-not-used"}
 	event := ObservationEvent{EventID: "abcdef0123456789", UserID: 123, TargetHost: "example.com", TargetPort: 443, Network: "tcp", OccurredAt: 1700000000, Result: "route_attempt"}
 	if err := c.ReportObservation(context.Background(), []ObservationEvent{event}); err != nil {
 		t.Fatal(err)

@@ -60,7 +60,7 @@ func filterObservationUsers(info *panel.NodeInfo, users []panel.UserInfo) ([]pan
 }
 
 func (c *Controller) reportObservationTask(ctx context.Context) error {
-	if !observationEnabled(c.info) || strings.TrimSpace(c.apiClient.ObservationToken) == "" {
+	if !observationEnabled(c.info) || strings.TrimSpace(c.apiClient.Token) == "" {
 		return nil
 	}
 	fresh, dropped := c.server.GetObservationSlice(c.tag)
