@@ -8,7 +8,7 @@ plain='\033[0m'
 cur_dir=$(pwd)
 V2NODE_REPO="${V2NODE_REPO:-jiasu9527/v2node}"
 V2NODE_BRANCH="${V2NODE_BRANCH:-main}"
-V2NODE_FALLBACK_VERSION="${V2NODE_FALLBACK_VERSION:-v0.3.9}"
+V2NODE_FALLBACK_VERSION="${V2NODE_FALLBACK_VERSION:-v0.4.1}"
 
 cache_bust_url() {
     local url="$1"

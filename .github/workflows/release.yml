@@ -43,6 +43,8 @@ jobs:
 
   build:
     needs: test
+    permissions:
+      contents: write # Upload archives to the release after successful tests.
     strategy:
       matrix:
         # Include amd64 on all platforms.
