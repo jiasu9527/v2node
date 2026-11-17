@@ -60,3 +60,22 @@ func TestGetNodeInfoParsesDedicatedObservationAllowlist(t *testing.T) {
 		t.Fatalf("observation config not parsed: %#v", info.Common.ObservationAudit)
 	}
 }
+
+func TestGetNodeInfoParsesAllUserObservation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/server/config" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"protocol":"anytls","server_port":443,"base_config":{"push_interval":60,"pull_interval":60},"observation_audit":{"enable":true,"mode":"all","report_interval":45}}`))
+	}))
+	defer srv.Close()
+	client := &Client{client: resty.New().SetBaseURL(srv.URL), APIHost: srv.URL, NodeId: 7}
+	info, err := client.GetNodeInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Common.ObservationAudit == nil || !info.Common.ObservationAudit.Enable || info.Common.ObservationAudit.Mode != "all" {
+		t.Fatalf("all-user observation config not parsed: %#v", info.Common.ObservationAudit)
+	}
+}

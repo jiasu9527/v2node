@@ -37,6 +37,23 @@ func TestFilterObservationUsers(t *testing.T) {
 	if got, err := filterObservationUsers(observed, users); err != nil || got == nil || len(got) != 0 {
 		t.Fatalf("paused observation with empty list did not revoke users: %#v %v", got, err)
 	}
+	observed.Common.ObservationAudit.Mode = "all"
+	observed.Common.ObservationAudit.Enable = true
+	if got, err := filterObservationUsers(observed, users); err != nil || len(got) != len(users) || got[0].Id != users[0].Id || got[1].Id != users[1].Id {
+		t.Fatalf("all-user mode unexpectedly restricted node users: %#v %v", got, err)
+	}
+	observed.Common.ObservationAudit.Enable = false
+	if got, err := filterObservationUsers(observed, users); err != nil || len(got) != len(users) {
+		t.Fatalf("paused all-user mode unexpectedly restricted node users: %#v %v", got, err)
+	}
+	observed.Common.ObservationAudit.Mode = "unknown"
+	if got, err := filterObservationUsers(observed, users); err == nil || got != nil {
+		t.Fatalf("unknown observation mode did not fail closed: %#v %v", got, err)
+	}
+	external := &panel.NodeInfo{Common: &panel.CommonNode{Protocol: "juicity", ObservationAudit: &panel.ObservationAuditConfig{Enable: true, Mode: "all"}}}
+	if got, err := filterObservationUsers(external, users); err == nil || got != nil {
+		t.Fatalf("external all-user mode falsely claimed coverage: %#v %v", got, err)
+	}
 }
 
 func TestObservationRetryKeepsEventIDs(t *testing.T) {

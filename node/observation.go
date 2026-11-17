@@ -21,14 +21,23 @@ func observationConfigured(info *panel.NodeInfo) bool {
 	return info != nil && info.Common != nil && info.Common.ObservationAudit != nil
 }
 
-// filterObservationUsers is a second, node-side authentication boundary for
-// a dedicated observation node. Subscription policy alone is not sufficient.
+// filterObservationUsers preserves normal node authentication in all-user
+// mode. The dedicated allowlist mode remains a second node-side boundary;
+// subscription delivery policy alone is not sufficient in that mode.
 func filterObservationUsers(info *panel.NodeInfo, users []panel.UserInfo) ([]panel.UserInfo, error) {
 	if !observationConfigured(info) {
 		return users, nil
 	}
 	if isExternalNode(info) {
 		return nil, errors.New("observation requires an Xray-backed node")
+	}
+	switch strings.ToLower(strings.TrimSpace(info.Common.ObservationAudit.Mode)) {
+	case "all":
+		return users, nil
+	case "", "allowlist":
+		// Continue with the existing dedicated-node allowlist behavior.
+	default:
+		return nil, fmt.Errorf("invalid observation mode %q", info.Common.ObservationAudit.Mode)
 	}
 	ids := info.Common.ObservationAudit.AllowedUserIDs
 	if len(ids) == 0 && observationEnabled(info) {

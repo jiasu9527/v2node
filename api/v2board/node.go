@@ -114,12 +114,14 @@ type SensitiveAuditConfig struct {
 	LogClientIP    bool     `json:"log_client_ip"`
 }
 
-// ObservationAuditConfig is deliberately opt-in per node. The panel must not
-// enable destination observation for ordinary nodes through a global default.
+// ObservationAuditConfig is deliberately opt-in per node. Mode "all" records
+// every authenticated user of that node without changing its user list;
+// absent mode preserves the legacy dedicated-node allowlist behavior.
 type ObservationAuditConfig struct {
-	Enable         bool  `json:"enable"`
-	ReportInterval any   `json:"report_interval"`
-	AllowedUserIDs []int `json:"allowed_user_ids"`
+	Enable         bool   `json:"enable"`
+	Mode           string `json:"mode"`
+	ReportInterval any    `json:"report_interval"`
+	AllowedUserIDs []int  `json:"allowed_user_ids"`
 }
 
 func (c *ObservationAuditConfig) ReportIntervalDuration() time.Duration {
