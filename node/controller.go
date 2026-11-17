@@ -71,7 +71,10 @@ func (c *Controller) Start(x *core.V2Core) error {
 			return err
 		}
 	}
-	if len(c.userList) == 0 {
+	// A dedicated node may intentionally have no currently eligible users (or
+	// an explicit empty allowlist during revocation). Keep the node running with
+	// no credentials rather than crashing the whole process or restoring users.
+	if len(c.userList) == 0 && !observationConfigured(node) {
 		return errors.New("add users error: not have any user")
 	}
 	c.aliveMap, err = c.apiClient.GetUserAlive(context.Background())
