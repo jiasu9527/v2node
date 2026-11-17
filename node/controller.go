@@ -14,21 +14,23 @@ import (
 )
 
 type Controller struct {
-	server                   *core.V2Core
-	apiClient                *panel.Client
-	tag                      string
-	limiter                  *limiter.Limiter
-	userList                 []panel.UserInfo
-	aliveMap                 map[int]int
-	conf                     *conf.NodeConfig
-	info                     *panel.NodeInfo
-	nodeInfoMonitorPeriodic  *task.Task
-	userReportPeriodic       *task.Task
-	onlineReportPeriodic     *task.Task
-	sensitiveReportPeriodic  *task.Task
-	renewCertPeriodic        *task.Task
-	embeddedProtocolServer   core.EmbeddedProtocolServer
-	externalTrafficCollector *core.ExternalTrafficCollector
+	server                    *core.V2Core
+	apiClient                 *panel.Client
+	tag                       string
+	limiter                   *limiter.Limiter
+	userList                  []panel.UserInfo
+	aliveMap                  map[int]int
+	conf                      *conf.NodeConfig
+	info                      *panel.NodeInfo
+	nodeInfoMonitorPeriodic   *task.Task
+	userReportPeriodic        *task.Task
+	onlineReportPeriodic      *task.Task
+	sensitiveReportPeriodic   *task.Task
+	observationReportPeriodic *task.Task
+	pendingObservation        []panel.ObservationEvent
+	renewCertPeriodic         *task.Task
+	embeddedProtocolServer    core.EmbeddedProtocolServer
+	externalTrafficCollector  *core.ExternalTrafficCollector
 }
 
 // NewController return a Node controller with default parameters.
@@ -59,6 +61,15 @@ func (c *Controller) Start(x *core.V2Core) error {
 	c.userList, err = c.apiClient.GetUserList(context.Background())
 	if err != nil {
 		return fmt.Errorf("get user list error: %s", err)
+	}
+	if observationEnabled(node) {
+		if len(c.apiClient.ObservationToken) != 64 {
+			return errors.New("observation node requires a 64-character ObservationToken")
+		}
+		c.userList, err = filterObservationUsers(node, c.userList)
+		if err != nil {
+			return err
+		}
 	}
 	if len(c.userList) == 0 {
 		return errors.New("add users error: not have any user")
@@ -115,6 +126,9 @@ func (c *Controller) Close() error {
 	}
 	if c.sensitiveReportPeriodic != nil {
 		c.sensitiveReportPeriodic.Close()
+	}
+	if c.observationReportPeriodic != nil {
+		c.observationReportPeriodic.Close()
 	}
 	if c.renewCertPeriodic != nil {
 		c.renewCertPeriodic.Close()

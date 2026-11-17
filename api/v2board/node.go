@@ -32,16 +32,17 @@ type NodeInfo struct {
 }
 
 type CommonNode struct {
-	Protocol         string                `json:"protocol"`
-	ExternalProtocol bool                  `json:"external_protocol"`
-	TrafficMode      string                `json:"traffic_mode"`
-	PasswordMode     string                `json:"password_mode"`
-	ListenIP         string                `json:"listen_ip"`
-	SendThrough      string                `json:"send_through,omitempty"`
-	ServerPort       int                   `json:"server_port"`
-	Routes           []Route               `json:"routes"`
-	BaseConfig       *BaseConfig           `json:"base_config"`
-	SensitiveAudit   *SensitiveAuditConfig `json:"sensitive_audit"`
+	Protocol         string                  `json:"protocol"`
+	ExternalProtocol bool                    `json:"external_protocol"`
+	TrafficMode      string                  `json:"traffic_mode"`
+	PasswordMode     string                  `json:"password_mode"`
+	ListenIP         string                  `json:"listen_ip"`
+	SendThrough      string                  `json:"send_through,omitempty"`
+	ServerPort       int                     `json:"server_port"`
+	Routes           []Route                 `json:"routes"`
+	BaseConfig       *BaseConfig             `json:"base_config"`
+	SensitiveAudit   *SensitiveAuditConfig   `json:"sensitive_audit"`
+	ObservationAudit *ObservationAuditConfig `json:"observation_audit"`
 	//vless vmess trojan
 	Tls                int         `json:"tls"`
 	TlsSettings        TlsSettings `json:"tls_settings"`
@@ -111,6 +112,25 @@ type SensitiveAuditConfig struct {
 	Rules          []string `json:"rules"`
 	ReportInterval any      `json:"report_interval"`
 	LogClientIP    bool     `json:"log_client_ip"`
+}
+
+// ObservationAuditConfig is deliberately opt-in per node. The panel must not
+// enable destination observation for ordinary nodes through a global default.
+type ObservationAuditConfig struct {
+	Enable         bool  `json:"enable"`
+	ReportInterval any   `json:"report_interval"`
+	AllowedUserIDs []int `json:"allowed_user_ids"`
+}
+
+func (c *ObservationAuditConfig) ReportIntervalDuration() time.Duration {
+	if c == nil || c.ReportInterval == nil {
+		return time.Minute
+	}
+	d := intervalToTime(c.ReportInterval)
+	if d <= 0 {
+		return time.Minute
+	}
+	return d
 }
 
 func (c *SensitiveAuditConfig) ReportIntervalDuration() time.Duration {
