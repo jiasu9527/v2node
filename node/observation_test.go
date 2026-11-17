@@ -28,6 +28,15 @@ func TestFilterObservationUsers(t *testing.T) {
 	if got, err := filterObservationUsers(observed, users); err != nil || got == nil || len(got) != 0 {
 		t.Fatalf("all revoked users must produce a real empty list: %#v %v", got, err)
 	}
+	observed.Common.ObservationAudit.Enable = false
+	observed.Common.ObservationAudit.AllowedUserIDs = []int{2}
+	if got, err := filterObservationUsers(observed, users); err != nil || len(got) != 1 || got[0].Id != 2 {
+		t.Fatalf("paused observation widened the authentication allowlist: %#v %v", got, err)
+	}
+	observed.Common.ObservationAudit.AllowedUserIDs = []int{}
+	if got, err := filterObservationUsers(observed, users); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("paused observation with empty list did not revoke users: %#v %v", got, err)
+	}
 }
 
 func TestObservationRetryKeepsEventIDs(t *testing.T) {

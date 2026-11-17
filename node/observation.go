@@ -17,17 +17,21 @@ func observationEnabled(info *panel.NodeInfo) bool {
 	return info != nil && info.Common != nil && info.Common.ObservationAudit != nil && info.Common.ObservationAudit.Enable
 }
 
+func observationConfigured(info *panel.NodeInfo) bool {
+	return info != nil && info.Common != nil && info.Common.ObservationAudit != nil
+}
+
 // filterObservationUsers is a second, node-side authentication boundary for
 // a dedicated observation node. Subscription policy alone is not sufficient.
 func filterObservationUsers(info *panel.NodeInfo, users []panel.UserInfo) ([]panel.UserInfo, error) {
-	if !observationEnabled(info) {
+	if !observationConfigured(info) {
 		return users, nil
 	}
 	if isExternalNode(info) {
 		return nil, errors.New("observation requires an Xray-backed node")
 	}
 	ids := info.Common.ObservationAudit.AllowedUserIDs
-	if len(ids) == 0 {
+	if len(ids) == 0 && observationEnabled(info) {
 		return nil, errors.New("observation allowlist is empty")
 	}
 	allowed := make(map[int]struct{}, len(ids))

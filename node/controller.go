@@ -62,8 +62,8 @@ func (c *Controller) Start(x *core.V2Core) error {
 	if err != nil {
 		return fmt.Errorf("get user list error: %s", err)
 	}
-	if observationEnabled(node) {
-		if len(c.apiClient.ObservationToken) != 64 {
+	if observationConfigured(node) {
+		if observationEnabled(node) && len(c.apiClient.ObservationToken) != 64 {
 			return errors.New("observation node requires a 64-character ObservationToken")
 		}
 		c.userList, err = filterObservationUsers(node, c.userList)
